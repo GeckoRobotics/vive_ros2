@@ -62,6 +62,7 @@ class ViveTrackerClient:
         self.count = 0
         self.logger = logging.getLogger(f"Vive Tracker Client [{self.tracker_name}]")
         self.logger.info("Tracker Initialized")
+        print("tracker initialized")
 
     def update(self):
         """
@@ -78,6 +79,7 @@ class ViveTrackerClient:
         """
         self.logger.info(f"Start Subscribing to [{self.host}:{self.port}] "
                          f"for [{self.tracker_name}] Vive Tracker Updates")
+        
         while True:
             try:
                 _ = self.socket.sendto(self.tracker_name.encode(), (self.host, self.port))
@@ -129,6 +131,51 @@ class ViveTrackerClient:
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
                     queue.put(self.latest_tracker_message)
+                    if self.should_record:
+                        if self.count % 10 == 0:
+                            self.output_file.write(f'{self.latest_tracker_message.x},'
+                                                   f'{self.latest_tracker_message.y},'
+                                                   f'{self.latest_tracker_message.z},'
+                                                   f'{self.latest_tracker_message.roll},'
+                                                   f'{self.latest_tracker_message.pitch},'
+                                                   f'{self.latest_tracker_message.yaw}\n')
+                    self.count += 1
+                else:
+                    self.logger.error(f"Failed to parse incoming message [{data.decode()}]")
+                    print("failed")
+            except socket.timeout:
+                self.logger.error("Timed out")
+            except ConnectionResetError as e:
+                self.logger.error(f"Error: {e}. Retrying")
+            except OSError as e:
+                pass
+                # self.logger.error(e)
+            except KeyboardInterrupt:
+                exit(1)
+            except Exception as e:
+                self.logger.debug(e)
+
+
+    def run_threaded_log(self, kill):
+        """
+        Same as update but uses queue and listens to kil event
+
+        Args:
+            kill: signal to end the thread
+
+        Returns:
+            None
+        """
+        self.logger.info(f"Start Subscribing to [{self.host}:{self.port}] "
+                         f"for [{self.tracker_name}] Vive Tracker Updates")
+        while not kill.is_set():
+            try:
+                _ = self.socket.sendto(self.tracker_name.encode(), (self.host, self.port))
+                data, addr = self.socket.recvfrom(self.buffer_length)  # buffer size is 1024 bytes
+                parsed_message, status = self.parse_message(data.decode())
+                if status:
+                    self.update_latest_tracker_message(parsed_message=parsed_message)
+                    # queue.put(self.latest_tracker_message)
                     if self.should_record:
                         if self.count % 10 == 0:
                             self.output_file.write(f'{self.latest_tracker_message.x},'

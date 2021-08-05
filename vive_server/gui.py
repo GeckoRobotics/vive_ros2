@@ -6,7 +6,7 @@ import math
 from dearpygui.simple import *
 from dearpygui.core import *
 
-from models import Configuration
+from .models import Configuration
 
 RED = [255, 0, 0, 255]
 PURPLE = [128, 0, 128, 255]

@@ -17,11 +17,10 @@ import scipy.spatial.transform as transform
 import time
 import os
 
-from base_server import Server
-from gui import GuiManager
-from models import ViveDynamicObjectMessage, ViveStaticObjectMessage, Configuration
-from triad_openvr import TriadOpenVR
-
+from .base_server import Server
+from .gui import GuiManager
+from .models import ViveDynamicObjectMessage, ViveStaticObjectMessage, Configuration
+from .triad_openvr import TriadOpenVR
 
 def construct_socket_msg(data: ViveDynamicObjectMessage) -> str:
     """
@@ -50,9 +49,9 @@ class ViveTrackerServer(Server):
     """
 
     def __init__(self, port: int, pipe: Pipe, logging_queue: Queue,
-                 config_path: Path = Path(f"~/vive_ros2/config.yml").expanduser(),
+                 config_path: Path = Path(f"~/gecko_vive_ros2/config.yml").expanduser(),
                  use_gui: bool = False, buffer_length: int = 1024, should_record: bool = False,
-                 output_file_path: Path = Path(f"~/vive_ros2/data/RFS_track.txt").expanduser()):
+                 output_file_path: Path = Path(f"~/gecko_vive_ros2/data/RFS_track.txt").expanduser()):
         """
         Initialize socket and OpenVR
         
@@ -64,7 +63,7 @@ class ViveTrackerServer(Server):
             output_file_path: output file's path
         """
         super(ViveTrackerServer, self).__init__(port)
-        self.logger = logging.getLogger("ViveTrackerServer")
+        self.logger = logging.getLogger("ViveTrackerServer") # TODO send this to STDIO for now, ROS logger?
         self.logger.addHandler(logging.handlers.QueueHandler(logging_queue))
         self.logger.setLevel(logging.INFO)
         self.pipe = pipe

@@ -55,3 +55,6 @@ qtcreator-*
 CATKIN_IGNORE
 
 .idea
+
+# Python venv
+*.venv
