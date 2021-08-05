@@ -39,6 +39,7 @@ if __name__ == "__main__":
                             tracker_name="tracker_1",
                             should_record=False)
 
+    client_message_queue = Queue()
     client_kill_thread = Event()
     client_thread = Thread(target=client.run_threaded, args=(client_message_queue, client_kill_thread,))
     # client_thread = Thread(target=client.run_threaded_log, args=(client_kill_thread,))
