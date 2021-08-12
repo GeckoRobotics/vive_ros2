@@ -105,8 +105,8 @@ class ViveTrackerClient:
             except OSError as e:
                 pass
                 # self.logger.error(e)
-            except KeyboardInterrupt:
-                exit(1)
+            # except KeyboardInterrupt:
+            #     exit(1)
             except Exception as e:
                 self.logger.debug(e)
 
@@ -148,8 +148,8 @@ class ViveTrackerClient:
             except ConnectionResetError as e:
                 self.logger.error(f"Error: {e}. Retrying")
             except OSError as e:
-                pass
-                # self.logger.error(e)
+                # pass
+                self.logger.error(e)
             except KeyboardInterrupt:
                 exit(1)
             except Exception as e:
@@ -193,7 +193,7 @@ class ViveTrackerClient:
                 self.logger.error(f"Error: {e}. Retrying")
             except OSError as e:
                 pass
-                # self.logger.error(e)
+                self.logger.error(e)
             except KeyboardInterrupt:
                 exit(1)
             except Exception as e:

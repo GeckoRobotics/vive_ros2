@@ -231,26 +231,63 @@ class ConfigurationPage(Page):
         config = self.gui_manager.get_config()
 
 
+# class StartRecordingPage(Page):
+#     def __init__(self, gui_manager, name="Start Recording"):
+#         super().__init__(name, gui_manager)
+#         self.devs_shown = []
+
+#     def update(self, system_state):
+#         for dev in system_state:
+#             serial = system_state[dev].serial_num
+#             if dev not in self.devs_shown:
+#                 self.devs_shown.append(dev)
+#                 add_input_text(f"Folder for Recording##inputtext", default_value=dev.device_name,
+#                                 on_enter=True, callback=self.update_dev_name,
+#                                 callback_data=("cb1", "cb2"))
+#                 add_text(f"test_txt", color=GREY)
+#                 # add_input_text(f"{dev}:{serial}##name", default_value=system_state[dev].dev_name,
+#                 #                 on_enter=True, callback=self.update_dev_name,
+#                 #                 callback_data=(dev, serial))
+#                 # add_text(f"{serial}_txt", color=GREY)
+ 
+
+#     def update_dev_name(self, sender, data):
+#         print(f"from update_dev_name: {data}")
+#     #     dev, serial = data
+#     #     new_name = get_value(f"{dev}:{serial}##name")
+#     #     config = self.gui_manager.get_config()
+#     #     config.name_mappings[serial] = new_name
+#     #     self.gui_manager.update_config(config)
+
+#     def clear(self, sender, data):
+#         super(StartRecordingPage, self).clear(sender, data)
+#         self.devs_shown = []
+
 class VisualizationPage:
     def __init__(self, gui_manager):
         self.gui_manager = gui_manager
         self.scene = Scene()
         self.devices_page = DevicesPage(name="Devices List", gui_manager=self.gui_manager)
         self.configuration_page = ConfigurationPage(name="Configuration", gui_manager=self.gui_manager)
-        self.calibrattion_page = CalibrationPage(name="Calibration", gui_manager=self.gui_manager)
+        self.calibration_page = CalibrationPage(name="Calibration", gui_manager=self.gui_manager)
+        # self.start_recording_page = StartRecordingPage(name="Start Recording", gui_manager=self.gui_manager)
 
     def show(self):
         add_button("Save Configuration", callback=self.save_config)
         add_same_line()
         add_button("Refresh", callback=self.refresh)
         add_same_line()
-        add_button("Calibrate", callback=self.calibrate)
-        add_same_line()
-        add_button("Test Calibration", callback=self.test_calibration)
-        add_same_line()
+        # add_button("Calibrate", callback=self.calibrate)
+        # add_same_line()
+        # add_button("Test Calibration", callback=self.test_calibration)
+        # add_same_line()
         add_button("List Devices", callback=self.list_devices)
         add_same_line()
         add_button("Show Configuration", callback=self.show_configuration)
+        add_same_line()
+        add_button("Start Recording", callback=self.start_recording)
+        add_same_line()
+        add_button("Stop Recording", callback=self.stop_recording)
         add_same_line()
         add_button("Logs", callback=self.logs)
         self.scene.add()
@@ -262,12 +299,26 @@ class VisualizationPage:
         self.gui_manager.refresh_system()
 
     def calibrate(self, sender, data):
-        self.calibrattion_page.show()
+        self.calibration_page.show()
 
     def test_calibration(self, sender, data):
         pass
 
+    def start_recording(self, sender, data):
+        # print(f"recording page .show returned: {self.start_recording_page.show()}")
+        recording_dict = {}
+        # recording_dict["tracker_name"] = 
+        # recording_dict["filename"] = 
+        # self._pipe.send({"start recording": recording_dict})
+        self.gui_manager.send_start_recording({"start recording": recording_dict})
+
+    def stop_recording(self, sender, data):
+        # self.calibration_page.show()
+        # self._pipe.send({"stop recording": None})
+        self.gui_manager.send_stop_recording({"stop recording": None})
+
     def list_devices(self, sender, data):
+        # print(f"devices page .show returned: {self.devices_page.show()}")
         self.devices_page.show()
 
     def show_configuration(self, sender, data):
@@ -280,10 +331,13 @@ class VisualizationPage:
         self.scene.draw(system_state)
         if does_item_exist("Devices List"):
             self.devices_page.update(system_state)
-        if does_item_exist("Configuration"):
+        if does_item_exist("Configuration"): #try commenting this out 
             self.configuration_page.update(system_state)
         if does_item_exist("Calibration"):
-            self.calibrattion_page.update(system_state)
+            self.calibration_page.update(system_state)
+        # if does_item_exist("Start Recording"):
+        #     self.start_recording_page.update(system_state)
+
 
     def clear(self):
         pass
@@ -339,10 +393,18 @@ class GuiManager:
     def call_calibration(self, origin, pos_x, pos_y):
         self._pipe.send({"calibrate": (origin, pos_x, pos_y)})
 
+    def send_start_recording(self, data: dict):
+        self._pipe.send(data)
+
+    def send_stop_recording(self, data: dict):
+        self._pipe.send(data)
+
     # Will Run the main gui
     def start(self):
-        with window("Vive Server", autosize=True, x_pos=20, y_pos=20):
+        with window("Vive Server", autosize=True, x_pos=750, y_pos=200):
             self._page.show()
+            show_logger() # TODO can move this?
 
         set_render_callback(self.on_render)
         start_dearpygui()
+        # print("Exited dearpygui")

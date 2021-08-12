@@ -56,5 +56,7 @@ CATKIN_IGNORE
 
 .idea
 
-# Python venv
+# Additional folders
 *.venv
+measurements
+config

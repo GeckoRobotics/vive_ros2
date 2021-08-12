@@ -8,14 +8,16 @@ import logging
 import logging.handlers
 import socket
 from multiprocessing import Queue, Process, Pipe
+import numpy as np
 from pathlib import Path
+import os
+import shutil
 from typing import List
 from typing import Optional
 import yaml
-import numpy as np
+
 import scipy.spatial.transform as transform
 import time
-import os
 
 from .base_server import Server
 from .gui import GuiManager
@@ -48,10 +50,14 @@ class ViveTrackerServer(Server):
 
     """
 
+    CONFIG_FILE_NAME = "config.yml"
+    STEAM_CONFIG_DIR = Path('C:\Program Files (x86)\Steam\config\lighthouse\\')
+    LIGHTHOUSE_DATABASE_FILE_NAME = "lighthousedb.json"
+
     def __init__(self, port: int, pipe: Pipe, logging_queue: Queue,
-                 config_path: Path = Path(f"~/gecko_vive_ros2/config.yml").expanduser(),
+                 config_path: Path = Path(os.getcwd()) / Path("config"),
                  use_gui: bool = False, buffer_length: int = 1024, should_record: bool = False,
-                 output_file_path: Path = Path(f"~/gecko_vive_ros2/data/RFS_track.txt").expanduser()):
+                 outputs_dir: Path = Path(os.getcwd()) / Path("measurements")):
         """
         Initialize socket and OpenVR
         
@@ -60,7 +66,7 @@ class ViveTrackerServer(Server):
             logging_queue: handler with where to send logs
             buffer_length: maximum buffer (tracker_name) that it can listen to at once
             should_record: should record data or not
-            output_file_path: output file's path
+            outputs_dir: folder to hold folders of recorded data
         """
         super(ViveTrackerServer, self).__init__(port)
         self.logger = logging.getLogger("ViveTrackerServer") # TODO send this to STDIO for now, ROS logger?
@@ -73,11 +79,14 @@ class ViveTrackerServer(Server):
 
         # load the configuration if one exists otherwise create one and set defaults
         if not self.config_path.exists():
-            os.makedirs(os.path.dirname(self.config_path))
-            with open(self.config_path, 'w') as f:
+            # print(f"Making config dir at {self.config_path}")
+            # os.makedirs(os.path.dirname(self.config_path))
+            self.config_path.mkdir(parents=True, exist_ok=True)
+            with open(self.config_path / Path(self.CONFIG_FILE_NAME), 'w') as f:
                 yaml.dump(self.config.dict(), f)
         else:
-            with open(self.config_path, 'r') as f:
+            # print(f"Config dir at {self.config_path} already exists, dumping to it")
+            with open(self.config_path / Path(self.CONFIG_FILE_NAME), 'r') as f:
                 data = yaml.load(f, Loader=yaml.FullLoader)
                 self.config = self.config.parse_obj(data)
 
@@ -86,11 +95,12 @@ class ViveTrackerServer(Server):
         self.reconnect_triad_vr()
 
         self.should_record = should_record
-        self.output_file_path = output_file_path
+        self.outputs_dir = outputs_dir
         self.output_file = None
-        if not self.output_file_path.exists():
-            self.output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        self.output_file = self.output_file_path.open('w')
+        # if not self.outputs_dir.exists():
+        #     print(f"Making measurement dir at {self.outputs_dir}")
+        #     self.outputs_dir.parent.mkdir(parents=True, exist_ok=True)
+        # self.output_file = self.outputs_dir.open('w')
         self.buffer_length = buffer_length
 
     def run(self):
@@ -129,8 +139,10 @@ class ViveTrackerServer(Server):
                     self.logger.error(f"Tracker {tracker_name} with key {tracker_key} not found")
             except socket.timeout:
                 self.logger.info("Did not receive connection from client")
+                print("no connection from client")
             except Exception as e:
                 self.logger.error(e)
+                print(e)
 
             # See if any commands have been sent from the gui
             while self.pipe.poll():
@@ -145,6 +157,11 @@ class ViveTrackerServer(Server):
                     self.reconnect_triad_vr()
                 if "calibrate" in data:
                     self.calibrate_world_frame(*data["calibrate"])
+                if "start recording" in data:
+                    self.start_recording(data["start recording"])
+                if "stop recording" in data:
+                    self.stop_recording(data["stop recording"])
+
 
             # Update the GUI
             if self.use_gui:
@@ -512,10 +529,60 @@ class ViveTrackerServer(Server):
             None
         """
         x, y, z, qw, qx, qy, qz = data.x, data.y, data.z, data.qw, data.qx, data.qy, data.qz
-        recording_data = f"{x}, {y},{z},{qw},{qx},{qy},{qz}"
-        m = f"Recording: {recording_data}"
-        self.logger.info(m)
-        self.output_file.write(recording_data + "\n")
+        recording_data = f"{time.time()},{x},{y},{z},{qw},{qx},{qy},{qz}"
+        self.output_file.write(recording_data + "\n") # TODO zip this? Maybe downsample?
+
+    def start_recording(self, data: dict):
+        """
+        Triggers recording of measurements in a new folder
+
+        Args: 
+            data: Dict with information for recording
+        
+        Returns:   
+            None
+        """
+        self.logger.info("Starting recording... ")
+
+        tracker_name = ""
+        if not "tracker_name" in data:
+            tracker_name = "tracker_1" # TODO
+        else:
+            tracker_name = data["tracker_name"]
+
+        self.single_recording_dir = self.outputs_dir / Path(time.strftime('%Y-%m-%d_%H-%M-%S', time.localtime()))
+        
+        if not self.single_recording_dir.exists():
+            self.logger.info(f"Making measurement dir at {self.single_recording_dir}")
+            self.single_recording_dir.mkdir(parents=True, exist_ok=True)
+
+        self.output_file = (self.single_recording_dir / Path(tracker_name + ".csv")).open('w')
+        self.output_file.write("Timestamp,x,y,z,qw,qx,qy,qz\n")
+
+        self.should_record = True
+
+        # Copy over SteamVR config files
+        shutil.copy(self.STEAM_CONFIG_DIR / Path(self.LIGHTHOUSE_DATABASE_FILE_NAME), self.single_recording_dir)
+        # If any of the `lhr` folders changed copy those as well TODO
+
+    def stop_recording(self, data: dict):
+        """
+        Ends recording of measurements in the latest folder
+
+        Args: 
+            data: Dict thats empty for now
+        
+        Returns:   
+            None
+        """
+        if not self.should_record:
+            self.logger.info("No recording in progress")
+            return
+
+        self.should_record = False
+        self.output_file.close()
+        self.logger.info("Recording stopped")
+
 
 
 def run_server(port: int, pipe: Pipe, logging_queue: Queue, config: Path, use_gui: bool, should_record: bool = False):
