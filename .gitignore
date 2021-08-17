@@ -55,3 +55,8 @@ qtcreator-*
 CATKIN_IGNORE
 
 .idea
+
+# Additional folders
+*.venv
+measurements
+config

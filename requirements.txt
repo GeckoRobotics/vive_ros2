@@ -1,0 +1,7 @@
+dearpygui==0.6.415
+numpy==1.21.1
+openvr==1.16.801
+pydantic==1.8.2
+PyYAML==5.4.1
+scipy==1.7.1
+typing-extensions==3.10.0.0
