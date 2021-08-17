@@ -136,6 +136,7 @@ class DevicesPage(Page):
                 set_value(f"{serial}_txt", f"x: {round(system_state[device].x, 2)}, "
                                            f"y: {round(system_state[device].y, 2)}, "
                                            f"z: {round(system_state[device].z, 2)}")
+                #print("Device ID", device, "System state",system_state[device])
 
     def update_device_name(self, sender, data):
         device, serial = data

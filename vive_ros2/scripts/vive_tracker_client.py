@@ -29,7 +29,7 @@ class ViveTrackerClient:
     """
 
     def __init__(self, host: str, port: int, tracker_name: str,
-                 time_out: float = 1, buffer_length: int = 1024,
+                 time_out: float = 1, buffer_length: int = 1024*2,
                  should_record: bool = False,
                  output_file_path: Path = Path(expanduser("~") + "/vive_ros2/data/RFS_Track.txt")):
         """
@@ -83,6 +83,7 @@ class ViveTrackerClient:
                 _ = self.socket.sendto(self.tracker_name.encode(), (self.host, self.port))
                 data, addr = self.socket.recvfrom(self.buffer_length)  # buffer size is 1024 bytes
                 parsed_message, status = self.parse_message(data.decode())
+                print("parsed_message", data)
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
                     if self.should_record:
@@ -125,7 +126,10 @@ class ViveTrackerClient:
             try:
                 _ = self.socket.sendto(self.tracker_name.encode(), (self.host, self.port))
                 data, addr = self.socket.recvfrom(self.buffer_length)  # buffer size is 1024 bytes
-                parsed_message, status = self.parse_message(data.decode())
+                parsed_messages, status = self.parse_message(data.decode())
+                parsed_message_list, status = self.parse_entries_message(parsed_messages)
+                parsed_message = parsed_message_list[-1]
+                print("parsed_message", parsed_message)
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
                     queue.put(self.latest_tracker_message)
@@ -202,6 +206,25 @@ class ViveTrackerClient:
             return "", False
         else:
             return received_message[start + 1:end], True
+
+    @staticmethod
+    def parse_entries_message(received_message: str) -> Tuple[str, bool]:
+        """
+        Parse the received message by ensuring that it start and end with special "handshake" characters
+
+        Args:
+            received_message: string format of the received bytes
+
+        Returns:
+            parsed received message in string and whether the parsing was successful
+
+        """
+        start = received_message.find("&")
+        #end = received_message.find("\u")
+        if start == -1: #or end == -1:
+            return "", False
+        else:
+            return received_message.split("&"), True
 
     @staticmethod
     def initialize_socket() -> socket.socket:

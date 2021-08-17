@@ -36,7 +36,7 @@ def construct_socket_msg(data: ViveDynamicObjectMessage) -> str:
     """
     json_data = json.dumps(data.json(), sort_keys=False)
     json_data = "&" + json_data
-    json_data = json_data + "\r"  # * (512 - len(json_data))
+    json_data = json_data #+ "\n"  # * (512 - len(json_data))
     return json_data
 
 
@@ -113,19 +113,31 @@ class ViveTrackerServer(Server):
         # Main server loop
         while True:
             messages = {"state": {}}
+            socket_messages = ""
             # Transmit data over the network
             try:
                 tracker_name, addr = self.socket.recvfrom(self.buffer_length)
                 tracker_name = tracker_name.decode()
                 tracker_key = self.resolve_name_to_key(tracker_name)
+                base_station_keys = self.get_tracking_reference_keys()
+                socket_messages = ""
+                for base_station_key in base_station_keys:
+                    message = self.poll_tracking_reference(tracking_reference_key=base_station_key)
+                    messages["state"][base_station_key] = message
+                    socket_message = construct_socket_msg(data=message)
+                    #print("Message : ", socket_message)
+                    socket_messages = socket_messages + socket_message 
+                #print("Message : ", message)
                 if tracker_key in self.get_tracker_keys():
                     message = self.poll_tracker(tracker_key=tracker_key)
                     messages["state"][tracker_key] = message
                     if message is not None:
                         socket_message = construct_socket_msg(data=message)
-                        self.socket.sendto(socket_message.encode(), addr)
+                        socket_messages = socket_messages + socket_message +"\r"
+                        self.socket.sendto(socket_messages.encode(), addr)
                         if self.should_record:
-                            self.record(data=message)
+                            self.record(data=messages)
+                    print("Message : ", socket_messages)
                 else:
                     self.logger.error(f"Tracker {tracker_name} with key {tracker_key} not found")
             except socket.timeout:
