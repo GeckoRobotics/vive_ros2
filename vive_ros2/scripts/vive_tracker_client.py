@@ -10,6 +10,8 @@ import logging
 from typing import Optional
 from os.path import expanduser
 
+from yaml import parse
+
 from vive_server.models import ViveDynamicObjectMessage
 import json
 from typing import Tuple
@@ -52,6 +54,7 @@ class ViveTrackerClient:
         self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 20)
         self.socket.settimeout(self.time_out)
         self.latest_tracker_message: Optional[ViveDynamicObjectMessage] = None
+        self.latest_base_station_messages = []
         self.should_record = should_record
         self.output_file_path = output_file_path
         self.output_file = None
@@ -132,7 +135,9 @@ class ViveTrackerClient:
                 print("parsed_message", parsed_message)
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
+                    self.update_latest_base_station_messages(parsed_messages=parsed_messages[0:-1])
                     queue.put(self.latest_tracker_message)
+                    #queue.put(self.latest_base_station_messages)
                     if self.should_record:
                         if self.count % 10 == 0:
                             self.output_file.write(f'{self.latest_tracker_message.x},'
@@ -187,6 +192,30 @@ class ViveTrackerClient:
             self.logger.debug(self.latest_tracker_message)
         except Exception as e:
             self.logger.error(f"Error: {e} \nMaybe it is related to unable to parse buffer [{parsed_message}]. ")
+    
+    def update_latest_base_station_messages(self, parsed_messages):
+        """
+        Given Vive Base Station messages in JSON format, load json into dictionary format,
+        parse the base station message using PyDantic
+
+        Assign self.latest_base_station_messages as the parsed result
+
+        Args:
+            parsed_message: base_station message in json format
+
+        Returns:
+            None
+        """
+        try:
+            for parsed_message in parsed_messages:
+                d = json.loads(json.loads(parsed_messages))
+                vive_base_station_message = ViveDynamicObjectMessage.parse_obj(d)
+                if vive_base_station_message.device_name == self.tracker_name:
+                    self.latest_base_station_messages.append(vive_base_station_message)
+            self.logger.debug(self.latest_base_station_messages)
+        except Exception as e:
+            self.logger.error(f"Error: {e} \nMaybe it is related to unable to parse buffer [{parsed_message}]. ")
+    
 
     @staticmethod
     def parse_message(received_message: str) -> Tuple[str, bool]:

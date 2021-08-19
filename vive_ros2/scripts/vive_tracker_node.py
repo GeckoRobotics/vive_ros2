@@ -54,38 +54,42 @@ class ViveTrackerNode(Node):
             #self.client.update()
             while rclpy.ok():
                 msg = self.message_queue.get()
-
-            #     odom_msg = Odometry()
-            #     odom_msg.header.stamp = self.get_clock().now().to_msg()
-            #     odom_msg.header.frame_id = self.link_name.get_parameter_value().string_value
-
-            #     odom_msg.child_frame_id = self.child_link_name.get_parameter_value().string_value
-
-            #     odom_msg.pose.pose.position.x = msg.x
-            #     odom_msg.pose.pose.position.y = msg.y
-            #     odom_msg.pose.pose.position.z = msg.z
-
-            #     odom_msg.pose.pose.orientation.x = msg.qx
-            #     odom_msg.pose.pose.orientation.y = msg.qy
-            #     odom_msg.pose.pose.orientation.z = msg.qz
-            #     odom_msg.pose.pose.orientation.w = msg.qw
-
-            #     odom_msg.twist.twist.linear.x = msg.vel_x
-            #     odom_msg.twist.twist.linear.y = msg.vel_y
-            #     odom_msg.twist.twist.linear.z = msg.vel_z
-
-            #     odom_msg.twist.twist.angular.x = msg.p
-            #     odom_msg.twist.twist.angular.y = msg.q
-            #     odom_msg.twist.twist.angular.z = msg.r
-
-            #     self.odom_pub.publish(odom_msg)
-            #     self.publish_tf(odom_msg.pose.pose, odom_msg.header.frame_id, odom_msg.child_frame_id)
+                odom_msg = self.set_odom(msg,odom_msg)
+                self.odom_pub.publish(odom_msg)
+                self.publish_tf(odom_msg.pose.pose, odom_msg.header.frame_id, odom_msg.child_frame_id)
 
         finally:
             # cleanup
             self.kill_thread.set()
             self.client_thread.join()
     
+    def set_odom(self, msg, odom_msg):
+        odom_msg = Odometry()
+        odom_msg.header.stamp = self.get_clock().now().to_msg()
+        odom_msg.header.frame_id = self.link_name.get_parameter_value().string_value
+
+        odom_msg.child_frame_id = self.child_link_name.get_parameter_value().string_value
+
+        odom_msg.pose.pose.position.x = msg.x
+        odom_msg.pose.pose.position.y = msg.y
+        odom_msg.pose.pose.position.z = msg.z
+
+        odom_msg.pose.pose.orientation.x = msg.qx
+        odom_msg.pose.pose.orientation.y = msg.qy
+        odom_msg.pose.pose.orientation.z = msg.qz
+        odom_msg.pose.pose.orientation.w = msg.qw
+
+        odom_msg.twist.twist.linear.x = msg.vel_x
+        odom_msg.twist.twist.linear.y = msg.vel_y
+        odom_msg.twist.twist.linear.z = msg.vel_z
+
+        odom_msg.twist.twist.angular.x = msg.p
+        odom_msg.twist.twist.angular.y = msg.q
+        odom_msg.twist.twist.angular.z = msg.r
+
+        return odom_msg
+
+
     def publish_tf(self, odom_pose, parent_frame, child_frame):
         tf_odom = geometry_msgs.msg.TransformStamped()
         tf_odom.header.stamp = self.get_clock().now().to_msg()
@@ -99,9 +103,6 @@ class ViveTrackerNode(Node):
         tf_odom.transform.rotation.z = odom_pose.orientation.z
         tf_odom.transform.rotation.w = odom_pose.orientation.w
         self.br.sendTransform(tf_odom)
-
-
-
 
 def main(args=None):
     rclpy.init(args=args)
