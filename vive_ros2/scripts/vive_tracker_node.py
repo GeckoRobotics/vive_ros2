@@ -17,7 +17,7 @@ class ViveTrackerNode(Node):
     def __init__(self):
         super().__init__('vive_tracker_node')
         # self.declare_parameter('host_ip', '192.168.50.171')
-        self.declate_parameter('host_ip', socket.gethostbyname(socket.gethostname()))
+        self.declare_parameter('host_ip', socket.gethostbyname(socket.gethostname()))
         self.declare_parameter('host_port', 8000)
         self.declare_parameter('tracker_name', 'tracker_1')
         self.declare_parameter('topic', '')
