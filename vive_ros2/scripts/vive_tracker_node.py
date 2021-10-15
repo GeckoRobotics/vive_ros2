@@ -54,7 +54,7 @@ class ViveTrackerNode(Node):
             #self.client.update()
             while rclpy.ok():
                 msg = self.message_queue.get()
-                odom_msg = self.set_odom(msg,odom_msg)
+                odom_msg = self.set_odom(msg)
                 self.odom_pub.publish(odom_msg)
                 self.publish_tf(odom_msg.pose.pose, odom_msg.header.frame_id, odom_msg.child_frame_id)
 
@@ -63,7 +63,7 @@ class ViveTrackerNode(Node):
             self.kill_thread.set()
             self.client_thread.join()
     
-    def set_odom(self, msg, odom_msg):
+    def set_odom(self, msg):
         odom_msg = Odometry()
         odom_msg.header.stamp = self.get_clock().now().to_msg()
         odom_msg.header.frame_id = self.link_name.get_parameter_value().string_value
