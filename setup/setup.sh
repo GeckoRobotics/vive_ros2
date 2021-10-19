@@ -4,7 +4,7 @@ if [ $setup_venv == 'y' ] || [ $setup_venv == 'Y' ]
 then
     . ./setup_virtualenv.sh
 else
-    source /usr/local/py3ros2/bin/setup.activate
+    source ~/dev/.venv/py3ros2/bin/activate
 fi
 
 echo "Installing vive_ros2 dependencies."
