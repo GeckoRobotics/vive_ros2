@@ -16,12 +16,14 @@ import numpy as np
 import scipy.spatial.transform as transform
 import time
 import os
+import math
 
 from base_server import Server
 from gui import GuiManager
 from models import ViveDynamicObjectMessage, ViveStaticObjectMessage, Configuration
 from triad_openvr import TriadOpenVR
-
+from pyquaternion import quaternion as quat
+from scipy.spatial.transform import Rotation as rot
 
 def construct_socket_msg(data: ViveDynamicObjectMessage) -> str:
     """
@@ -117,16 +119,22 @@ class ViveTrackerServer(Server):
             # Transmit data over the network
             try:
                 tracker_name, addr = self.socket.recvfrom(self.buffer_length)
+                #print("tracker name ", tracker_name, "address", addr)
                 tracker_name = tracker_name.decode()
                 tracker_key = self.resolve_name_to_key(tracker_name)
                 base_station_keys = self.get_tracking_reference_keys()
+                #print("tracker name ", base_station_keys, "key", tracker_key)
+
                 socket_messages = ""
                 for base_station_key in base_station_keys:
+                    #print(self.get_tracking_reference_keys())
+                    #print(base_station_key)
                     message = self.poll_tracking_reference(tracking_reference_key=base_station_key)
                     messages["state"][base_station_key] = message
                     socket_message = construct_socket_msg(data=message)
                     #print("Message : ", socket_message)
                     socket_messages = socket_messages + socket_message 
+                    #print('there')
                 #print("Message : ", message)
                 if tracker_key in self.get_tracker_keys():
                     message = self.poll_tracker(tracker_key=tracker_key)
@@ -137,7 +145,7 @@ class ViveTrackerServer(Server):
                         self.socket.sendto(socket_messages.encode(), addr)
                         if self.should_record:
                             self.record(data=messages)
-                    print("Message : ", socket_messages)
+                    #print("Message : ", socket_messages)
                 else:
                     self.logger.error(f"Tracker {tracker_name} with key {tracker_key} not found")
             except socket.timeout:
@@ -378,25 +386,55 @@ class ViveTrackerServer(Server):
 
         """
         try:
-            _, _, _, r, p, y = device.get_pose_euler()
+            _, _, _, roll, pitch, yaw = device.get_pose_euler()
             x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
 
             vel_x, vel_y, vel_z = device.get_velocity()
             p, q, r = device.get_angular_velocity()
 
             # handle world transform
-            rot_vw = self.get_rot_vw()
-            x, y, z = rot_vw.apply([x, y, z])
-            x, y, z = self.translate_to_origin(x, y, z)
+            #rot_vw = self.get_rot_vw()
+            #x, y, z = rot_vw.apply([x, y, z])
+            #x, y, z = self.translate_to_origin(x, y, z)
 
             # bring velocities into the local device frame such that positive x is pointing out the USB port
-            rot_lv = transform.Rotation.from_quat([qx, qy, qz, qw]) * transform.Rotation.from_matrix([[0, 1, 0],
-                                                                                                      [1, 0, 0],
-                                                                                                      [0, 0, -1]])
-            vel_x, vel_y, vel_z = rot_lv.apply([vel_x, vel_y, vel_z], inverse=True)
-            p, q, r = rot_lv.apply([p, q, r], inverse=True)
+            # rot_lv = transform.Rotation.from_quat([qx, qy, qz, qw]) * transform.Rotation.from_matrix([[0, 1, 0],
+            #                                                                                          [1, 0, 0],
+            #                                                                                          [0, 0, -1]])
+            #vel_x, vel_y, vel_z = rot_lv.apply([vel_x, vel_y, vel_z], inverse=True)
+            #p, q, r = rot_lv.apply([p, q, r], inverse=True)
+            #qx, qy, qz, qw = rot_lv.inv().as_quat()
 
-            qx, qy, qz, qw = rot_lv.inv().as_quat()
+            rot_read = rot.from_quat([qx, qy, qz, qw])
+            # rot_fix = rot.from_euler('xyz', [-90,0,180], degrees=True)
+            rot_fix = rot.from_matrix([[1,0,0],[0,0,1],[0,-1,0]])
+            rot_fixed = rot_fix*rot_read
+            z_vec = [0, 0, 1]
+            rot_z_vec = rot_fixed.apply(z_vec)
+            fixed_z_vec = [-rot_z_vec[0],rot_z_vec[1],rot_z_vec[2]]
+            y_vec = [0, 1, 0]
+            rot_y_vec = rot_fixed.apply(y_vec)
+            fixed_y_vec = [-rot_y_vec[0],rot_y_vec[1],rot_y_vec[2]]
+            x_vec = [1, 0, 0]
+            rot_x_vec = rot_fixed.apply(x_vec)
+            fixed_x_vec = [rot_x_vec[0],-rot_x_vec[1],-rot_x_vec[2]]
+            mat_fixed = rot.from_matrix([[fixed_x_vec[0],fixed_y_vec[0],fixed_z_vec[0]],[fixed_x_vec[1],fixed_y_vec[1],fixed_z_vec[1]],[fixed_x_vec[2],fixed_y_vec[2],fixed_z_vec[2]]])
+
+            rot_vec = rot_read.as_rotvec()
+            rot_angle = np.linalg.norm(rot_vec)
+            #print("vec", (rot_vec)/rot_angle, ", angle", rot_angle*180.0/math.pi)
+            rot_vec_adjusted_temp = rot_vec/rot_angle
+            rot_vec_adjusted = rot_vec_adjusted_temp
+            rot_fix = rot.from_matrix([[1,0,0],[0,0,1],[0,1,0]])
+            rot_vec_adjusted = rot_fix.apply(rot_vec_adjusted_temp)
+            rot_adjusted = rot.from_rotvec(rot_vec_adjusted*(rot_angle))
+            #print("quat1", rot_adjusted.as_quat())
+            #print("quat2", rot_read.as_quat())
+           
+            qx, qy, qz, qw = mat_fixed.as_quat()
+
+            quaternion = rot.from_euler('xyz',[90, 0, 0], degrees=True)
+            x, y, z = quaternion.apply([x, y, z])
 
             serial = device.get_serial()
             device_name = device_key if serial not in self.config.name_mappings else self.config.name_mappings[serial]
@@ -432,10 +470,46 @@ class ViveTrackerServer(Server):
 
         """
         try:
+            _, _, _, roll, pitch, yaw = device.get_pose_euler()
+            #print("rpy0", roll,",", pitch, ",", yaw)
             x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
-            x, y, z = self.get_rot_vw().apply([x, y, z])
-            x, y, z = self.translate_to_origin(x, y, z)
+            # quaternion = [qx, qy, qz, qw]
+            #print("quat0", quaternion)
+            # matrix = device.get_pose_matrix()
+            # x = matrix[0][3]
+            # y = matrix[1][3]
+            # z = matrix[2][3]
+            # rot_matrix = rot.from_matrix([[matrix[0][0], matrix[0][1], matrix[0][2]],
+            #                             [matrix[1][0], matrix[1][1], matrix[1][2]],
+            #                             [matrix[2][0], matrix[2][1], matrix[2][2]]])
+            # quaternion = rot_matrix.as_quat()
+            # #print("quaternion", quaternion)
+            # [roll, pitch, yaw] = rot_matrix.as_euler('xyz', degrees=True)
+            # #print("rpy", roll,",", pitch, ",", yaw)
+            # [qx, qy, qz, qw] = quaternion
+            # x, y, z = self.get_rot_vw().apply([x, y, z])
+            #x, y, z = self.translate_to_origin(x, y, z)
+            quaternion = rot.from_euler('xyz',[90, 0, 0], degrees=True)
+            x, y, z = quaternion.apply([x, y, z])
+            #x, y, z = 0, 0, 0
+
+            # rot_lv = transform.Rotation.from_quat([qx, qy, qz, qw]) * transform.Rotation.from_matrix([[0, 1, 0],
+            #                                                                                           [1, 0, 0],
+            #                                                                                           [0, 0, -1]])            
+            # qx, qy, qz, qw = rot_lv.inv().as_quat()
+            
+            # rot_read = transform.Rotation.from_quat([qx, qy, qz, qw])
+            # #print(device_key, rot_read.as_euler('xyz', degrees=True), roll, pitch, yaw)
+            
+            # rot_fix = rot.from_euler('xyz', [0,0,0], degrees=True)
+            # #rot_fix = rot.from_matrix([[0,1,0],[1,0,0],[0,0,-1]])
+            # rot_fixed =  transform.Rotation.from_quat([qx, qy, qz, qw]) * rot_fix
+            # qx, qy, qz, qw = rot_fixed.as_quat()
+            # #qx, qy, qz, qw = 0, 0, 0, 1
+
+
             serial = device.get_serial()
+            #print('cant access device')
             device_name = device_key if serial not in self.config.name_mappings else self.config.name_mappings[serial]
             message = ViveStaticObjectMessage(valid=True, x=x, y=y, z=z,
                                               qx=qx, qy=qy, qz=qz, qw=qw,

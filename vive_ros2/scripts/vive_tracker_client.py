@@ -54,7 +54,9 @@ class ViveTrackerClient:
         self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 20)
         self.socket.settimeout(self.time_out)
         self.latest_tracker_message: Optional[ViveDynamicObjectMessage] = None
+        self.latest_tracker_ID = ''
         self.latest_base_station_messages = []
+        self.latest_base_station_IDs = []
         self.should_record = should_record
         self.output_file_path = output_file_path
         self.output_file = None
@@ -86,7 +88,7 @@ class ViveTrackerClient:
                 _ = self.socket.sendto(self.tracker_name.encode(), (self.host, self.port))
                 data, addr = self.socket.recvfrom(self.buffer_length)  # buffer size is 1024 bytes
                 parsed_message, status = self.parse_message(data.decode())
-                print("parsed_message", data)
+                #print("parsed_message", data)
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
                     if self.should_record:
@@ -112,7 +114,7 @@ class ViveTrackerClient:
             except Exception as e:
                 self.logger.debug(e)
 
-    def run_threaded(self, queue, kill):
+    def run_threaded(self, queue, queue_ID, queue_bs, queue_bs_ID, kill):
         """
         Same as update but uses queue and listens to kil event
 
@@ -132,12 +134,16 @@ class ViveTrackerClient:
                 parsed_messages, status = self.parse_message(data.decode())
                 parsed_message_list, status = self.parse_entries_message(parsed_messages)
                 parsed_message = parsed_message_list[-1]
-                print("parsed_message", parsed_message)
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
-                    self.update_latest_base_station_messages(parsed_messages=parsed_messages[0:-1])
+                    self.update_latest_base_station_messages(parsed_messages=parsed_message_list[0:-1])
                     queue.put(self.latest_tracker_message)
-                    #queue.put(self.latest_base_station_messages)
+                    queue_ID.put(self.latest_tracker_ID)
+                    queue_bs.put(self.latest_base_station_messages)
+                    queue_bs_ID.put(self.latest_base_station_IDs)    
+                    #print("parsed_message", parsed_message)
+                    #print("parsed_message_bs", self.latest_base_station_messages)
+                    queue_bs.put(self.latest_base_station_messages)
                     if self.should_record:
                         if self.count % 10 == 0:
                             self.output_file.write(f'{self.latest_tracker_message.x},'
@@ -189,6 +195,7 @@ class ViveTrackerClient:
             vive_tracker_message = ViveDynamicObjectMessage.parse_obj(d)
             if vive_tracker_message.device_name == self.tracker_name:
                 self.latest_tracker_message = vive_tracker_message
+                self.latest_tracker_ID = d['serial_num']
             self.logger.debug(self.latest_tracker_message)
         except Exception as e:
             self.logger.error(f"Error: {e} \nMaybe it is related to unable to parse buffer [{parsed_message}]. ")
@@ -207,14 +214,17 @@ class ViveTrackerClient:
             None
         """
         try:
-            for parsed_message in parsed_messages:
-                d = json.loads(json.loads(parsed_messages))
+            self.latest_base_station_messages.clear()
+            self.latest_base_station_IDs.clear()
+            for i in range(0,len(parsed_messages)):
+                d = json.loads(json.loads(parsed_messages[i]))
                 vive_base_station_message = ViveDynamicObjectMessage.parse_obj(d)
-                if vive_base_station_message.device_name == self.tracker_name:
-                    self.latest_base_station_messages.append(vive_base_station_message)
+                base_station_ID = d['serial_num']                
+                self.latest_base_station_messages.append(vive_base_station_message)
+                self.latest_base_station_IDs .append(base_station_ID)
             self.logger.debug(self.latest_base_station_messages)
         except Exception as e:
-            self.logger.error(f"Error: {e} \nMaybe it is related to unable to parse buffer [{parsed_message}]. ")
+            self.logger.error(f"Error: {e} \nMaybe it is related to unable to parse buffer base station[{parsed_messages}]. ")
     
 
     @staticmethod
