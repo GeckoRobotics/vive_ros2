@@ -28,6 +28,10 @@ install(PROGRAMS
         DESTINATION lib/${PROJECT_NAME}
         )
 
+install(DIRECTORY ../vive_server/vive_server
+        DESTINATION lib/${PROJECT_NAME}
+        ) # Build this WITHOUT --symlink-install
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   #set(ament_cmake_cpplint_FOUND TRUE)
