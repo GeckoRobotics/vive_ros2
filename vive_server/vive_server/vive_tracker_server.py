@@ -22,6 +22,10 @@ from gui import GuiManager
 from models import ViveDynamicObjectMessage, ViveStaticObjectMessage, Configuration
 from triad_openvr import TriadOpenVR
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 def construct_socket_msg(data: ViveDynamicObjectMessage) -> str:
     """
@@ -289,11 +293,11 @@ class ViveTrackerServer(Server):
                                                                                               device_key=tracker_key)
                     return message
                 else:
-                    logger.warning(f"Device {tracker_key} returned None pose")
+                    self.logger.warning(f"Device {tracker_key} returned None pose")
             else:
-                logger.warning(f"Device {tracker_key} not found")
+                self.logger.warning(f"Device {tracker_key} not found")
         except Exception as e:
-            logger.error(f"Error polling tracker {tracker_key}: {str(e)}")
+            self.logger.error(f"Error polling tracker {tracker_key}: {str(e)}")
         return None
 
     def poll_controller(self, controller_key) -> Optional[ViveDynamicObjectMessage]:

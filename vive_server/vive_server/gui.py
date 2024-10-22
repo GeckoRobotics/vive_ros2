@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import queue
 from pathlib import Path
 import math
+import numpy as np
 
 import dearpygui.dearpygui as dpg
 import logging
@@ -49,6 +50,7 @@ class Page(ABC):
 # Moving in and out changes the x and y axis by changing the virtual camera configuration
 class Scene:
     def __init__(self, width=1000, height=500, name="scene"):
+        self.logger = logging.getLogger(__name__ + ".Scene")
         self.name = name
         self.width = width
         self.height = height
@@ -62,20 +64,53 @@ class Scene:
         self.last_mouse_pos = None
         self.rotation_x = 0
         self.rotation_y = 0
+        self.translation = [0, 0]
 
     def add(self):
         with dpg.drawlist(width=self.width, height=self.height, tag=self.name):
             dpg.draw_rectangle(pmin=(0, 0), pmax=self.bottom_left, color=(0, 0, 0, 255), fill=(0, 0, 0, 255), tag="background")
+        
+        with dpg.handler_registry():
+            dpg.add_mouse_drag_handler(callback=self.on_drag)
+            dpg.add_mouse_release_handler(callback=self.on_release)
 
-    def add_axes(self):
-        length = 100
-        origin = self.center
-        x_end = [origin[0] + length, origin[1]]
-        y_end = [origin[0], origin[1] - length]
+    def on_drag(self, sender, app_data, user_data):
+        if not self.is_dragging:
+            self.is_dragging = True
+            self.last_mouse_pos = app_data[1:]
+        else:
+            delta_x = app_data[1] - self.last_mouse_pos[0]
+            delta_y = app_data[2] - self.last_mouse_pos[1]
+            
+            self.rotation_y += delta_x * 0.01
+            self.rotation_x += delta_y * 0.01
+            
+            self.last_mouse_pos = app_data[1:]
 
-        dpg.draw_line(parent=self.name, p1=origin, p2=x_end, color=(255, 0, 0, 255), thickness=2, tag="axis_x")
-        dpg.draw_line(parent=self.name, p1=origin, p2=y_end, color=(0, 255, 0, 255), thickness=2, tag="axis_y")
-        dpg.draw_circle(parent=self.name, center=origin, radius=4, color=(0, 0, 255, 255), fill=(0, 0, 255, 255), tag="axis_origin")
+    def on_release(self, sender, app_data, user_data):
+        self.is_dragging = False
+
+    def transform_point(self, point):
+        # Apply rotation
+        rot_x = np.array([[1, 0, 0],
+                          [0, np.cos(self.rotation_x), -np.sin(self.rotation_x)],
+                          [0, np.sin(self.rotation_x), np.cos(self.rotation_x)]])
+        
+        rot_y = np.array([[np.cos(self.rotation_y), 0, np.sin(self.rotation_y)],
+                          [0, 1, 0],
+                          [-np.sin(self.rotation_y), 0, np.cos(self.rotation_y)]])
+        
+        rotation = np.dot(rot_y, rot_x)
+        rotated_point = np.dot(rotation, point)
+        
+        # Apply translation and scaling
+        transformed_point = [
+            (rotated_point[0] + self.translation[0]) * self.scale_x + self.center[0],
+            (rotated_point[1] + self.translation[1]) * self.scale_y + self.center[1],
+            rotated_point[2] * self.z_scale
+        ]
+        
+        return transformed_point
 
     def draw(self, device_state):
         dpg.delete_item(self.name, children_only=True)
@@ -88,12 +123,30 @@ class Scene:
                 if tracker_msg is not None:
                     self.draw_tracker(tracker_msg)
 
+    def add_axes(self):
+        length = 100  # You can adjust this value to change the length of all axes
+        origin = self.transform_point([0, 0, 0])
+        x_end = self.transform_point([length / self.scale_x, 0, 0])
+        y_end = self.transform_point([0, length / self.scale_y, 0])
+        z_end = self.transform_point([0, 0, length / self.z_scale])
+
+        dpg.draw_line(parent=self.name, p1=origin[:2], p2=x_end[:2], color=(255, 0, 0, 255), thickness=2, tag="axis_x")
+        dpg.draw_line(parent=self.name, p1=origin[:2], p2=y_end[:2], color=(0, 255, 0, 255), thickness=2, tag="axis_y")
+        dpg.draw_line(parent=self.name, p1=origin[:2], p2=z_end[:2], color=(0, 0, 255, 255), thickness=2, tag="axis_z")
+        
+        # Add axis labels
+        dpg.draw_text(parent=self.name, pos=x_end[:2], text="X", color=(255, 0, 0, 255), size=20, tag="label_x")
+        dpg.draw_text(parent=self.name, pos=y_end[:2], text="Y", color=(0, 255, 0, 255), size=20, tag="label_y")
+        dpg.draw_text(parent=self.name, pos=z_end[:2], text="Z", color=(0, 0, 255, 255), size=20, tag="label_z")
+
+        dpg.draw_circle(parent=self.name, center=origin[:2], radius=4, color=(255, 255, 255, 255), fill=(255, 255, 255, 255), tag="axis_origin")
+
     def draw_tracker(self, tracker_msg):
         if tracker_msg is None:
             return
 
         try:
-            point = self.real_pose_to_pixels([tracker_msg.x, tracker_msg.y, tracker_msg.z])
+            point = self.transform_point([tracker_msg.x, tracker_msg.y, tracker_msg.z])
             diameter = abs(point[2]) + self.z_offset * self.z_scale
             dpg.draw_text(parent=self.name, pos=[point[0], point[1] - diameter - 15], text=f'{tracker_msg.device_name}', color=TRACKER_COLOR, size=13, tag=f"{tracker_msg.device_name}txt")
             dpg.draw_circle(parent=self.name, center=point[:2], radius=diameter, color=TRACKER_COLOR, fill=TRACKER_COLOR, tag=f"{tracker_msg.device_name}dot")
@@ -102,7 +155,7 @@ class Scene:
             pt2 = [point[0] - radius * math.cos(yaw), point[1] + radius * math.sin(yaw)]
             dpg.draw_line(parent=self.name, p1=point[:2], p2=pt2, color=PURPLE, thickness=3, tag=f"{tracker_msg.device_name}line")
         except AttributeError as e:
-            logger.error(f"Error drawing tracker {tracker_msg.device_name if hasattr(tracker_msg, 'device_name') else 'Unknown'}: {e}")
+            self.logger.error(f"Error drawing tracker {tracker_msg.device_name if hasattr(tracker_msg, 'device_name') else 'Unknown'}: {e}")
 
     def real_pose_from_pixels(self, point):
         return [(point[0] - self.center[0]) / self.scale_x, (point[1] - self.center[1]) / self.scale_y]
@@ -395,6 +448,9 @@ class GuiManager:
             dpg.render_dearpygui_frame()
 
         dpg.destroy_context()
+
+
+
 
 
 
