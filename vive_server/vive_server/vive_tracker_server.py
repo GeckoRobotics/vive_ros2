@@ -279,13 +279,21 @@ class ViveTrackerServer(Server):
         Returns:
             ViveTrackerMessage if tracker is found, None otherwise.
         """
-        tracker = self.get_device(key=tracker_key)
-        if tracker is not None:
-            message: Optional[ViveDynamicObjectMessage] = self.create_dynamic_message(device=tracker,
-                                                                                      device_key=tracker_key)
-            return message
-        else:
-            self.reconnect_triad_vr()
+        try:
+            tracker = self.get_device(key=tracker_key)
+            if tracker is not None:
+                # Check if the device is valid by attempting to get its pose
+                pose = tracker.get_pose_euler()
+                if pose is not None:
+                    message: Optional[ViveDynamicObjectMessage] = self.create_dynamic_message(device=tracker,
+                                                                                              device_key=tracker_key)
+                    return message
+                else:
+                    logger.warning(f"Device {tracker_key} returned None pose")
+            else:
+                logger.warning(f"Device {tracker_key} not found")
+        except Exception as e:
+            logger.error(f"Error polling tracker {tracker_key}: {str(e)}")
         return None
 
     def poll_controller(self, controller_key) -> Optional[ViveDynamicObjectMessage]:
@@ -377,19 +385,19 @@ class ViveTrackerServer(Server):
 
         """
         try:
-            _, _, _, r, p, y = device.get_pose_euler()
-            x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
+            pose_euler = device.get_pose_euler()
+            pose_quatern = device.get_pose_quaternion()
 
             vel_x, vel_y, vel_z = device.get_velocity()
             p, q, r = device.get_angular_velocity()
 
             # handle world transform
             rot_vw = self.get_rot_vw()
-            x, y, z = rot_vw.apply([x, y, z])
+            x, y, z = rot_vw.apply([pose_euler[0], pose_euler[1], pose_euler[2]])
             x, y, z = self.translate_to_origin(x, y, z)
 
             # bring velocities into the local device frame such that positive x is pointing out the USB port
-            rot_lv = transform.Rotation.from_quat([qx, qy, qz, qw]) * transform.Rotation.from_matrix([[0, 1, 0],
+            rot_lv = transform.Rotation.from_quat([pose_quatern[3], pose_quatern[0], pose_quatern[1], pose_quatern[2]]) * transform.Rotation.from_matrix([[0, 1, 0],
                                                                                                       [1, 0, 0],
                                                                                                       [0, 0, -1]])
             vel_x, vel_y, vel_z = rot_lv.apply([vel_x, vel_y, vel_z], inverse=True)
