@@ -389,7 +389,7 @@ class ViveTrackerServer(Server):
 
         """
         try:
-            _, _, _, r, p, y = device.get_pose_euler()
+            _, _, _, roll, pitch, yaw = device.get_pose_euler()
             x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
 
             vel_x, vel_y, vel_z = device.get_velocity()
@@ -414,7 +414,7 @@ class ViveTrackerServer(Server):
             message = ViveDynamicObjectMessage(valid=True, x=x, y=y, z=z,
                                                qx=qx, qy=qy, qz=qz, qw=qw,
                                                vel_x=vel_x, vel_y=vel_y, vel_z=vel_z,
-                                               p=p, q=q, r=r,
+                                               roll=roll, pitch=pitch, yaw=yaw,
                                                device_name=device_name,
                                                serial_num=serial)
             return message
@@ -443,6 +443,7 @@ class ViveTrackerServer(Server):
 
         """
         try:
+            _, _, _, roll, pitch, yaw = device.get_pose_euler()
             x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
             x, y, z = self.get_rot_vw().apply([x, y, z])
             x, y, z = self.translate_to_origin(x, y, z)
@@ -450,6 +451,7 @@ class ViveTrackerServer(Server):
             device_name = device_key if serial not in self.config.name_mappings else self.config.name_mappings[serial]
             message = ViveStaticObjectMessage(valid=True, x=x, y=y, z=z,
                                               qx=qx, qy=qy, qz=qz, qw=qw,
+                                              roll=roll, pitch=pitch, yaw=yaw,
                                               device_name=device_name,
                                               serial_num=serial)
             return message

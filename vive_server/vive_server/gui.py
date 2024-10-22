@@ -267,13 +267,16 @@ class DevicesPage(Page):
                 with dpg.group(parent="devices_group", tag=device_tag):
                     dpg.add_text(f"{device}:", tag=f"{device}_label")
                     dpg.add_text("", tag=f"{device}_position")
-                    dpg.add_text("", tag=f"{device}_rotation")
+                    dpg.add_text("", tag=f"{device}_euler")
                     dpg.add_text("", tag=f"{device}_velocity")
                     dpg.add_separator()
             
             # Update device information
             dpg.set_value(f"{device}_position", f"Position: x: {state.x:.4f}, y: {state.y:.4f}, z: {state.z:.4f}")
-            dpg.set_value(f"{device}_rotation", f"Rotation: qx: {state.qx:.4f}, qy: {state.qy:.4f}, qz: {state.qz:.4f}, qw: {state.qw:.4f}")
+            
+            # Display Euler angles
+            dpg.set_value(f"{device}_euler", f"Rotation (deg): roll: {state.roll:.2f}, pitch: {state.pitch:.2f}, yaw: {state.yaw:.2f}")
+            
             if hasattr(state, 'vel_x'):
                 dpg.set_value(f"{device}_velocity", f"Velocity: x: {state.vel_x:.4f}, y: {state.vel_y:.4f}, z: {state.vel_z:.4f}")
             else:
@@ -508,14 +511,22 @@ class GuiManager:
         self._pipe = pipe
         self._logging_queue = logging_queue
         self._server_config = None
-        self._page = None
+        self._pages = {}
         self.log_messages = []
 
     def start(self):
         dpg.create_context()
         
-        self._page = VisualizationPage(self)
-        self._page.show()
+        # Create all pages
+        self._pages['visualization'] = VisualizationPage(self)
+        self._pages['devices'] = DevicesPage('Devices', self)
+        
+        # Show all pages
+        for page in self._pages.values():
+            page.show()
+        
+        # Ensure the devices page is visible
+        self._pages['devices'].show()
         
         dpg.create_viewport(title="Vive Tracker Visualization", width=1200, height=800)
         dpg.setup_dearpygui()
@@ -541,7 +552,7 @@ class GuiManager:
             if "config" in data:
                 self._server_config = data["config"]
         
-        self._page.update(system_state)
+        self._pages['visualization'].update(system_state)
 
     def get_latest_logs(self):
         return "\n".join(self.log_messages[-100:])
@@ -551,7 +562,3 @@ class GuiManager:
 
     def update_config(self, config):
         self._server_config = config
-
-
-
-
