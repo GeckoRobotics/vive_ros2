@@ -3,6 +3,7 @@ import queue
 from pathlib import Path
 import math
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 import dearpygui.dearpygui as dpg
 import logging
@@ -66,6 +67,7 @@ class Scene:
         self.rotation_x = 0
         self.rotation_y = 0
         self.translation = [0, 0]
+        self.camera_rotation = Rotation.from_quat([0, 0, 0, 1])  # Identity quaternion
 
     def add(self):
         with dpg.drawlist(width=self.width, height=self.height, tag=self.name):
@@ -240,6 +242,37 @@ class Scene:
             dpg.draw_line(parent=self.name, p1=[0, y], p2=[tick_h, y], color=GREY, thickness=1, tag=f"{y}ytick")
             y_real = self.real_pose_from_pixels([0, y])[1]
             dpg.draw_text(parent=self.name, pos=[tick_h + 5, y - 2], text=f'{round(y_real, 1)}m', color=GREY, size=13, tag=f"{y}yticktext")
+
+    def update(self, system_state):
+        # Get the rotation matrix from the quaternion
+        rotation_matrix = self.camera_rotation.as_matrix()
+
+        for device, state in system_state.items():
+            # Get the original position
+            original_position = np.array([state.x, state.y, state.z])
+            
+            # Apply rotation to the position
+            rotated_position = rotation_matrix @ original_position
+            
+            # Update the tracker's position
+            self.trackers[device].position = rotated_position.tolist()
+            
+            # Rotate the tracker's orientation
+            original_orientation = Rotation.from_quat([state.qx, state.qy, state.qz, state.qw])
+            rotated_orientation = self.camera_rotation * original_orientation
+            qx, qy, qz, qw = rotated_orientation.as_quat()
+            
+            # Update the tracker's orientation
+            self.trackers[device].quaternion = [qw, qx, qy, qz]
+            # ... update other properties as needed ...
+
+    def set_camera_rotation(self, qx, qy, qz, qw):
+        self.camera_rotation = Rotation.from_quat([qx, qy, qz, qw])
+
+    def rotate_camera(self, axis, angle):
+        """Rotate the camera around a given axis by the specified angle (in radians)."""
+        rotation = Rotation.from_rotvec(axis * angle)
+        self.camera_rotation = rotation * self.camera_rotation
 
 
 class DevicesPage(Page):
@@ -562,3 +595,12 @@ class GuiManager:
 
     def update_config(self, config):
         self._server_config = config
+
+
+
+
+
+
+
+
+
