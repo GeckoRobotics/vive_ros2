@@ -113,7 +113,7 @@ class Scene:
         self.draw_scales()
         self.add_axes()
         for device in device_state:
-            if 'tracker' in device:
+            if 'tracker' in device or 'controller' in device:
                 if device_state[device] is not None:
                     self.draw_tracker(device_state[device])
 
@@ -346,3 +346,7 @@ class GuiManager:
 
         set_render_callback(self.on_render)
         start_dearpygui()
+
+
+
+

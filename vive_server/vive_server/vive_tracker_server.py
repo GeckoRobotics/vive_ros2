@@ -110,28 +110,39 @@ class ViveTrackerServer(Server):
         """
         self.logger.info(f"Starting server at {self.ip}:{self.port}")
         self.logger.info("Connected VR devices: \n###########\n" + str(self.triad_openvr) + "###########")
+        
         # Main server loop
         while True:
             messages = {"state": {}}
-            # Transmit data over the network
-            try:
-                tracker_name, addr = self.socket.recvfrom(self.buffer_length)
-                tracker_name = tracker_name.decode()
-                tracker_key = self.resolve_name_to_key(tracker_name)
-                if tracker_key in self.get_tracker_keys():
-                    message = self.poll_tracker(tracker_key=tracker_key)
+            
+            # Poll all trackers regardless of client requests
+            for tracker_key in self.get_tracker_keys():
+                message = self.poll_tracker(tracker_key=tracker_key)
+                if message is not None:
                     messages["state"][tracker_key] = message
-                    if message is not None:
-                        socket_message = construct_socket_msg(data=message)
-                        self.socket.sendto(socket_message.encode(), addr)
-                        if self.should_record:
-                            self.record(data=message)
-                else:
-                    self.logger.error(f"Tracker {tracker_name} with key {tracker_key} not found")
-            except socket.timeout:
-                self.logger.info("Did not receive connection from client")
-            except Exception as e:
-                self.logger.error(e)
+            
+            # Poll all tracking references
+            for reference_key in self.get_tracking_reference_keys():
+                message = self.poll_tracking_reference(tracking_reference_key=reference_key)
+                if message is not None:
+                    messages["state"][reference_key] = message
+            
+            # Check for client requests
+            # try:
+            #     tracker_name, addr = self.socket.recvfrom(self.buffer_length)
+            #     tracker_name = tracker_name.decode()
+            #     tracker_key = self.resolve_name_to_key(tracker_name)
+            #     if tracker_key in messages["state"]:
+            #         socket_message = construct_socket_msg(data=messages["state"][tracker_key])
+            #         self.socket.sendto(socket_message.encode(), addr)
+            #         if self.should_record:
+            #             self.record(data=messages["state"][tracker_key])
+            #     else:
+            #         self.logger.error(f"Tracker {tracker_name} with key {tracker_key} not found")
+            # except socket.timeout:
+            #     pass  # No client requests, continue with the loop
+            # except Exception as e:
+            #     self.logger.error(e)
 
             # See if any commands have been sent from the gui
             while self.pipe.poll():
@@ -469,7 +480,7 @@ class ViveTrackerServer(Server):
             list of tracker names
 
         """
-        return self.get_device_keys(filters=["tracker"])
+        return self.get_device_keys(filters=["tracker", "controller"])
 
     def get_tracking_reference_keys(self) -> List[str]:
         """
@@ -555,3 +566,4 @@ if __name__ == "__main__":
             gui.start()
         finally:
             p.kill()
+
