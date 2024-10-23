@@ -151,16 +151,9 @@ class ViveTrackerServer(Server):
             # See if any commands have been sent from the gui
             while self.pipe.poll():
                 data = self.pipe.recv()
-                if "config" in data:
-                    self.config = data["config"]
-                    self.logger.info(f"Configuration updated")
-                if "save" in data:
-                    self.save_config(data["save"])
                 if "refresh" in data:
                     self.logger.info("Refreshing system")
                     self.reconnect_triad_vr()
-                if "calibrate" in data:
-                    self.calibrate_world_frame(*data["calibrate"])
 
             # Update the GUI
             if self.use_gui:
@@ -387,7 +380,11 @@ class ViveTrackerServer(Server):
 
         """
         try:
-            _, _, _, roll, pitch, yaw = device.get_pose_euler()
+            pose_euler = device.get_pose_euler()
+            if pose_euler is None:
+                return None
+            
+            _, _, _, roll, pitch, yaw = pose_euler
             x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
 
             vel_x, vel_y, vel_z = device.get_velocity()
@@ -441,7 +438,11 @@ class ViveTrackerServer(Server):
 
         """
         try:
-            _, _, _, roll, pitch, yaw = device.get_pose_euler()
+            pose_euler = device.get_pose_euler()
+            if pose_euler is None:
+                return None
+            
+            _, _, _, roll, pitch, yaw = pose_euler
             x, y, z, qw, qx, qy, qz = device.get_pose_quaternion()
             x, y, z = self.get_rot_vw().apply([x, y, z])
             x, y, z = self.translate_to_origin(x, y, z)
@@ -536,7 +537,7 @@ class ViveTrackerServer(Server):
             None
         """
         x, y, z, qw, qx, qy, qz = data.x, data.y, data.z, data.qw, data.qx, data.qy, data.qz
-        recording_data = f"{x}, {y},{z},{qw},{qx},{qy},{qz}"
+        recording_data = f"{x},{y},{z},{qw},{qx},{qy},{qz}"
         m = f"Recording: {recording_data}"
         self.logger.info(m)
         self.output_file.write(recording_data + "\n")

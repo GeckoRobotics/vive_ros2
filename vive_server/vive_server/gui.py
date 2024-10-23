@@ -8,6 +8,7 @@ from scipy.spatial.transform import Rotation
 import dearpygui.dearpygui as dpg
 import logging
 import time
+import datetime
 
 from models import Configuration
 
@@ -35,7 +36,7 @@ class Page(ABC):
 
     def show(self) -> bool:
         if not dpg.does_item_exist(self.name):
-            with dpg.window(label=self.name, tag=self.name, autosize=True, on_close=self.clear):
+            with dpg.window(label=self.name, tag=self.name, autosize=False, on_close=self.clear):
                 pass  # Window contents will be added in subclasses
             return True
         return False
@@ -283,7 +284,7 @@ class DevicesPage(Page):
 
     def show(self):
         if not dpg.does_item_exist(self.window_tag):
-            with dpg.window(label="Devices", tag=self.window_tag):
+            with dpg.window(label="Devices", tag=self.window_tag, width=400, height=400):
                 dpg.add_text("Connected Devices:")
                 dpg.add_separator()
                 dpg.add_group(tag="devices_group")
@@ -324,122 +325,22 @@ class DevicesPage(Page):
         if dpg.does_item_exist(self.window_tag):
             dpg.hide_item(self.window_tag)
 
-
-# Calibration page includes scene with special configuration
-class CalibrationPage(Page):
-    def __init__(self, name: str, gui_manager):
-        super(CalibrationPage, self).__init__(name, gui_manager)
-        self.trackers = []
-        self.origin_tracker = None
-        self.pos_x_tracker = None
-        self.pos_y_tracker = None
-
-    def show(self):
-        if super(CalibrationPage, self).show():
-            with dpg.window(self.name):
-                dpg.add_text("instructions##calibration", default_value="Please select a tracker for "
-                                                                    "each axis. Available trackers "
-                                                                    "are listed below for convenience:")
-                dpg.add_spacing()
-                dpg.add_text("trackers##calibration", default_value=str(self.trackers))
-                dpg.add_input_text(f"origin##calibration", default_value="", callback=self.update_origin)
-                dpg.add_input_text(f"+x##calibration", default_value="", callback=self.update_pos_x)
-                dpg.add_input_text(f"+y##calibration", default_value="", callback=self.update_pos_y)
-                dpg.add_button("Start calibration", callback=self.run_calibration)
-
-    def update_origin(self, sender, data):
-        self.origin_tracker = dpg.get_value("origin##calibration")
-
-    def update_pos_x(self, sender, data):
-        self.pos_x_tracker = dpg.get_value("+x##calibration")
-
-    def update_pos_y(self, sender, data):
-        self.pos_y_tracker = dpg.get_value("+y##calibration")
-
-    def run_calibration(self, sender, data):
-        # verify valid input (trackers + unique)
-        if self.origin_tracker in self.trackers and \
-                self.pos_y_tracker in self.trackers and \
-                self.pos_x_tracker in self.trackers and \
-                self.origin_tracker != self.pos_x_tracker and \
-                self.origin_tracker != self.pos_y_tracker and \
-                self.pos_x_tracker != self.pos_y_tracker:
-            self.gui_manager.call_calibration(self.origin_tracker, self.pos_x_tracker, self.pos_y_tracker)
-        else:
-            logger.warning("Invalid tracker entered for calibration")
-
-    def update(self, system_state: dict):
-        trackers = []
-        for key in system_state:
-            if "tracker" in key:
-                trackers.append(system_state[key].device_name)
-        if len(trackers) > len(self.trackers):
-            self.trackers = trackers
-            dpg.set_value("trackers##calibration", str(trackers))
-
-    def clear(self, sender, data):
-        super(CalibrationPage, self).clear(sender, data)
-        self.trackers = []
-
-
-class TestCalibrationPage:
-    def __init__(self):
-        pass
-
-
-class ConfigurationPage(Page):
-    def show(self):
-        super(ConfigurationPage, self).show()
-
-    def update(self, system_state):
-        config = self.gui_manager.get_config()
-        if config is not None:
-            config_dict = dict(config)
-            for value in config_dict:
-                if not dpg.does_item_exist(f"{value}##config"):
-                    dpg.add_input_text(label=value, tag=f"{value}##config", default_value=str(config_dict[value]),
-                                       on_enter=True, callback=self.update_config_entry,
-                                       user_data=value)
-                else:
-                    dpg.set_value(f"{value}##config", str(config_dict[value]))
-
-    def update_config_entry(self, sender, data):
-        config = self.gui_manager.get_config()
-
-
-class CustomHandler(logging.Handler):
-    def __init__(self, log_queue):
-        super().__init__()
-        self.log_queue = log_queue
-
-    def emit(self, record):
-        self.log_queue.put(record)
-
 class VisualizationPage:
     def __init__(self, gui_manager):
         self.gui_manager = gui_manager
         self.scene = Scene(name="main_scene")
         self.devices_page = DevicesPage(name="Devices", gui_manager=self.gui_manager)
-        self.configuration_page = ConfigurationPage(name="Configuration", gui_manager=self.gui_manager)
-        self.calibration_page = CalibrationPage(name="Calibration", gui_manager=self.gui_manager)
-        self.log_window_created = False
-        self.log_window_tag = "Log Window"
 
     def show(self):
-        with dpg.window(label="Main Window", tag="main_window"):
+        with dpg.window(label="Main Window", tag="main_window", width=1000, height=1080, pos=[400, 0]):
             with dpg.group(horizontal=True):
-                dpg.add_button(label="Save Configuration", callback=self.save_config)
                 dpg.add_button(label="Refresh", callback=self.refresh)
-                dpg.add_button(label="Calibrate", callback=self.calibrate)
-                dpg.add_button(label="Test Calibration", callback=self.test_calibration)
-                dpg.add_button(label="List Devices", callback=self.list_devices)
-                dpg.add_button(label="Show Configuration", callback=self.show_configuration)
-                dpg.add_button(label="Logs", callback=self.toggle_logs)
-            
+                dpg.add_button(label="Test", callback=self.log_message)
+
             self.scene.add()
         
-        # Show the devices page
         self.devices_page.show()
+        self.show_logs()
 
     def save_config(self, sender, data):
         self.gui_manager.save_config()
@@ -447,42 +348,12 @@ class VisualizationPage:
     def refresh(self, sender, data):
         self.gui_manager.refresh_system()
 
-    def calibrate(self, sender, data):
-        self.calibration_page.show()
+    def log_message(self, sender, data):
+        self.gui_manager.add_log("Test message")
 
-    def test_calibration(self, sender, data):
-        pass
-
-    def list_devices(self, sender, data):
-        self.devices_page.show()
-
-    def show_configuration(self, sender, data):
-        self.configuration_page.show()
-
-    def logs(self, sender, app_data, user_data):
-        if not self.log_window_created:
-            with dpg.window(label="Logger", tag="logger_window"):
-                dpg.add_text("Log output will appear here")
-                dpg.add_text("", tag="log_output")
-            self.log_window_created = True
-        else:
-            dpg.configure_item("logger_window", show=True)
-
-    def update_logs(self):
-        if not self.log_window_created:
-            return
-
-        log_text = ""
-        while not self.log_queue.empty():
-            try:
-                record = self.log_queue.get_nowait()
-                log_text += self.log_handler.format(record) + "\n"
-            except queue.Empty:
-                break
-
-        if log_text and dpg.does_item_exist("log_output"):
-            current_text = dpg.get_value("log_output")
-            dpg.set_value("log_output", current_text + log_text)
+    def show_logs(self):
+        with dpg.window(label="Logger", tag="logger_window", width=400, height=400, pos=[0, 400]):
+            dpg.add_text("", tag="log_output")
 
     def update(self, system_state: dict):
         self.scene.draw(system_state)
@@ -499,45 +370,12 @@ class VisualizationPage:
     def clear(self):
         pass
 
-    def toggle_logs(self):
-        if not self.log_window_created:
-            with dpg.window(label="Logs", tag=self.log_window_tag):
-                dpg.add_text("", tag="log_text")
-            self.log_window_created = True
-        else:
-            if dpg.is_item_visible(self.log_window_tag):
-                dpg.hide_item(self.log_window_tag)
-            else:
-                dpg.show_item(self.log_window_tag)
-
     def update_logs(self):
-        if self.log_window_created and dpg.does_item_exist(self.log_window_tag):
-            log_text = self.gui_manager.get_latest_logs()
-            dpg.set_value("log_text", log_text)
-
-    def list_devices(self):
-        self.devices_page.show()
-
-    def save_config(self):
-        logger.info("Save Configuration button clicked")
-        # Implement save configuration logic here
+        log_text = self.gui_manager.get_latest_logs()
+        dpg.set_value("log_output", log_text)
 
     def refresh(self):
         self.gui_manager.refresh_system()
-        # Implement refresh logic here
-
-    def calibrate(self):
-        logger.info("Calibrate button clicked")
-        self.calibration_page.show()
-
-    def test_calibration(self):
-        logger.info("Test Calibration button clicked")
-        # Implement test calibration logic here
-
-    def show_configuration(self):
-        logger.info("Show Configuration button clicked")
-        self.configuration_page.show()
-
 
 class GuiManager:
     def __init__(self, pipe, logging_queue):
@@ -546,6 +384,30 @@ class GuiManager:
         self._server_config = None
         self._pages = {}
         self.log_messages = []
+        self.max_log_messages = 1000  # Limit the number of stored messages
+
+    def add_log(self, message, level=logging.INFO):
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"{timestamp} - {logging.getLevelName(level)} - {message}"
+        self.log_messages.insert(0, log_entry)  # Insert at the beginning
+        
+        # Limit the number of stored messages
+        if len(self.log_messages) > self.max_log_messages:
+            self.log_messages.pop()  # Remove the oldest message
+
+    def get_latest_logs(self):
+        return "\n".join(self.log_messages[:100])  # Get the 100 most recent messages
+
+    def clear_logs(self):
+        self.log_messages.clear()
+
+    def process_log_queue(self):
+        while not self._logging_queue.empty():
+            try:
+                record = self._logging_queue.get_nowait()
+                self.add_log(record.getMessage(), record.levelno)
+            except queue.Empty:
+                break
 
     def start(self):
         dpg.create_context()
@@ -561,10 +423,11 @@ class GuiManager:
         # Ensure the devices page is visible
         self._pages['devices'].show()
         
-        dpg.create_viewport(title="Vive Tracker Visualization", width=1200, height=800)
+        # Create the viewport
+        dpg.create_viewport(title="Vive Tracker Visualization", width=1920, height=1080)
         dpg.setup_dearpygui()
-        
         dpg.show_viewport()
+        dpg.maximize_viewport()
         
         # Main loop
         while dpg.is_dearpygui_running():
@@ -577,6 +440,8 @@ class GuiManager:
         dpg.destroy_context()
 
     def on_render(self):
+        self.process_log_queue()  # Process any new log messages
+        
         system_state = {}
         while self._pipe.poll():
             data = self._pipe.recv()
@@ -587,9 +452,6 @@ class GuiManager:
         
         self._pages['visualization'].update(system_state)
 
-    def get_latest_logs(self):
-        return "\n".join(self.log_messages[-100:])
-
     def get_config(self):
         return self._server_config
 
@@ -598,10 +460,5 @@ class GuiManager:
 
     def refresh_system(self):
         self._pipe.send({"refresh": None})
-
-
-
-
-
 
 
