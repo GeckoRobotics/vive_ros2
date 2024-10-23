@@ -325,15 +325,12 @@ class DevicesPage(Page):
         if self.selected_device:
             self.is_recording = not self.is_recording
             message = {"record": self.is_recording, "device": self.selected_device}
-            self.gui_manager._pipe.send(message)
-            
             if self.is_recording:
                 dpg.configure_item("record_button", label="Stop Recording")
-                self.gui_manager.add_log(f"Started recording data for device: {self.selected_device}")
             else:
                 dpg.configure_item("record_button", label="Start Recording")
-                self.gui_manager.add_log(f"Stopped recording data for device: {self.selected_device}")
-
+            self.gui_manager._pipe.send(message)
+            
     def clear(self):
         if dpg.does_item_exist(self.window_tag):
             dpg.delete_item(self.window_tag)
@@ -367,7 +364,7 @@ class VisualizationPage:
 
     def show_logs(self):
         with dpg.window(label="Logger", tag="logger_window", width=400, height=600, pos=[0, 200]):
-            dpg.add_text("", tag="log_output", multiline=True)
+            dpg.add_text("", tag="log_output", wrap=380)
 
     def update(self, system_state: dict):
         self.scene.draw(system_state)

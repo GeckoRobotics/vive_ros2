@@ -1,3 +1,4 @@
+from typing import List
 from pydantic import BaseModel, Field
 import scipy.spatial.transform as transform
 
@@ -18,6 +19,7 @@ class Configuration(BaseModel):
 
 class ViveDynamicObjectMessage(BaseModel):
     valid: int = Field(default=0)
+    matrix: List = Field(default_factory=list)
     x: float = Field(default=0)
     y: float = Field(default=0)
     z: float = Field(default=0)

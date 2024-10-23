@@ -16,6 +16,7 @@ import numpy as np
 import scipy.spatial.transform as transform
 import time
 import os
+from datetime import datetime
 
 from base_server import Server
 from gui import GuiManager
@@ -56,7 +57,7 @@ class ViveTrackerServer(Server):
     def __init__(self, port: int, pipe: Pipe, logging_queue: Queue,
                  config_path: Path = Path(f"~/vive_ros2/config.yml").expanduser(),
                  use_gui: bool = False, buffer_length: int = 1024, should_record: bool = False,
-                 output_file_path: Path = Path(f"~/vive_ros2/data/RFS_track.txt").expanduser()):
+                 output_directory: Path = Path(f"~/Documents/tracker_data").expanduser()):
         """
         Initialize socket and OpenVR
         
@@ -65,7 +66,7 @@ class ViveTrackerServer(Server):
             logging_queue: handler with where to send logs
             buffer_length: maximum buffer (tracker_name) that it can listen to at once
             should_record: should record data or not
-            output_file_path: output file's path
+            output_directory: output file's path
         """
         super(ViveTrackerServer, self).__init__(port)
         self.logger = logging.getLogger("ViveTrackerServer")
@@ -91,11 +92,7 @@ class ViveTrackerServer(Server):
         self.reconnect_triad_vr()
 
         self.should_record = should_record
-        self.output_file_path = output_file_path
-        self.output_file = None
-        if not self.output_file_path.exists():
-            self.output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        self.output_file = self.output_file_path.open('w')
+        self.output_directory = output_directory
         self.buffer_length = buffer_length
 
     def run(self):
@@ -124,29 +121,14 @@ class ViveTrackerServer(Server):
                 message = self.poll_tracker(tracker_key=tracker_key)
                 if message is not None:
                     messages["state"][tracker_key] = message
+                    if self.should_record and tracker_key == self.device_to_record:
+                        self.record(data=messages["state"][tracker_key])
             
             # Poll all tracking references
             for reference_key in self.get_tracking_reference_keys():
                 message = self.poll_tracking_reference(tracking_reference_key=reference_key)
                 if message is not None:
                     messages["state"][reference_key] = message
-            
-            # Check for client requests
-            # try:
-            #     tracker_name, addr = self.socket.recvfrom(self.buffer_length)
-            #     tracker_name = tracker_name.decode()
-            #     tracker_key = self.resolve_name_to_key(tracker_name)
-            #     if tracker_key in messages["state"]:
-            #         socket_message = construct_socket_msg(data=messages["state"][tracker_key])
-            #         self.socket.sendto(socket_message.encode(), addr)
-            #         if self.should_record:
-            #             self.record(data=messages["state"][tracker_key])
-            #     else:
-            #         self.logger.error(f"Tracker {tracker_name} with key {tracker_key} not found")
-            # except socket.timeout:
-            #     pass  # No client requests, continue with the loop
-            # except Exception as e:
-            #     self.logger.error(e)
 
             # See if any commands have been sent from the gui
             while self.pipe.poll():
@@ -154,10 +136,20 @@ class ViveTrackerServer(Server):
                 if "refresh" in data:
                     self.logger.info("Refreshing system")
                     self.reconnect_triad_vr()
-                if "record" in data:
+                elif "record" in data:
                     self.should_record = data["record"]
                     self.device_to_record = data["device"]
-                    self.logger.info(f"Recording set to {self.should_record} for device {self.device_to_record}")
+                    if self.should_record:
+                        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                        filename = f"{self.device_to_record}_{timestamp}.txt"
+                        output_file_path = self.output_directory / filename
+                        if not output_file_path.exists():
+                            output_file_path.parent.mkdir(parents=True, exist_ok=True)
+                        self.output_file = output_file_path.open('w')
+                        self.logger.info(f"Recording set to {filename}")
+                    else:
+                        self.logger.info(f"Recording stopped")
+                        self.output_file = None
 
             # Update the GUI
             if self.use_gui:
@@ -410,10 +402,18 @@ class ViveTrackerServer(Server):
 
             serial = device.get_serial()
             device_name = device_key if serial not in self.config.name_mappings else self.config.name_mappings[serial]
+            pose_matrix = device.get_pose_matrix()
+            pose_matrix_list = [
+                pose_matrix[0][0], pose_matrix[0][1], pose_matrix[0][2], pose_matrix[0][3],
+                pose_matrix[1][0], pose_matrix[1][1], pose_matrix[1][2], pose_matrix[1][3],
+                pose_matrix[2][0], pose_matrix[2][1], pose_matrix[2][2], pose_matrix[2][3]
+            ]
+            
             message = ViveDynamicObjectMessage(valid=True, x=x, y=y, z=z,
                                                qx=qx, qy=qy, qz=qz, qw=qw,
                                                vel_x=vel_x, vel_y=vel_y, vel_z=vel_z,
                                                roll=roll, pitch=pitch, yaw=yaw,
+                                               matrix=pose_matrix_list,
                                                device_name=device_name,
                                                serial_num=serial)
             return message
@@ -540,11 +540,9 @@ class ViveTrackerServer(Server):
         Returns:
             None
         """
-        x, y, z, qw, qx, qy, qz = data.x, data.y, data.z, data.qw, data.qx, data.qy, data.qz
-        recording_data = f"{x},{y},{z},{qw},{qx},{qy},{qz}"
-        m = f"Recording: {recording_data}"
-        self.logger.info(m)
-        self.output_file.write(recording_data + "\n")
+        current_timestamp = str(datetime.now())
+        message = json.dumps({"ts": current_timestamp, "pose": data.matrix}, separators=(',', ':'))
+        self.output_file.write(message + ",\n")
 
 
 def run_server(port: int, pipe: Pipe, logging_queue: Queue, config: Path, use_gui: bool, should_record: bool = False):
