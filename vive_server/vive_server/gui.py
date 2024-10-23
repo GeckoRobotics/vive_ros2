@@ -279,47 +279,96 @@ class Scene:
 class DevicesPage(Page):
     def __init__(self, name, gui_manager):
         super().__init__(name, gui_manager)
-        self.devices_shown = set()
         self.window_tag = f"{name}_window"
+        self.selected_device = None
+        self.device_list = []
+        self.is_recording = False
 
     def show(self):
         if not dpg.does_item_exist(self.window_tag):
-            with dpg.window(label="Devices", tag=self.window_tag, width=400, height=400):
-                dpg.add_text("Connected Devices:")
+            with dpg.window(label="Devices", tag=self.window_tag, width=400, height=200):
+                with dpg.group(horizontal=True):
+                    dpg.add_combo(tag="device_selector", callback=self.on_device_selected)
+                    dpg.add_button(label="Start Recording", tag="record_button", callback=self.toggle_recording)
                 dpg.add_separator()
-                dpg.add_group(tag="devices_group")
+                dpg.add_group(tag="device_info_group")
+            
+            # Set initial device selection
+            self.refresh_devices()
+        
         dpg.show_item(self.window_tag)
 
     def update(self, system_state):
         if not dpg.does_item_exist(self.window_tag):
             self.show()
 
-        for device, state in system_state.items():
-            device_tag = f"{device}_info"
-            if device not in self.devices_shown:
-                self.devices_shown.add(device)
-                with dpg.group(parent="devices_group", tag=device_tag):
-                    dpg.add_text(f"{device}:", tag=f"{device}_label")
-                    dpg.add_text("", tag=f"{device}_position")
-                    dpg.add_text("", tag=f"{device}_euler")
-                    dpg.add_text("", tag=f"{device}_velocity")
-                    dpg.add_separator()
-            
-            # Update device information
-            dpg.set_value(f"{device}_position", f"Position: x: {state.x:.4f}, y: {state.y:.4f}, z: {state.z:.4f}")
-            
-            # Display Euler angles
-            dpg.set_value(f"{device}_euler", f"Rotation (deg): roll: {state.roll:.2f}, pitch: {state.pitch:.2f}, yaw: {state.yaw:.2f}")
-            
-            if hasattr(state, 'vel_x'):
-                dpg.set_value(f"{device}_velocity", f"Velocity: x: {state.vel_x:.4f}, y: {state.vel_y:.4f}, z: {state.vel_z:.4f}")
+        # Update device list if it has changed
+        current_devices = set(system_state.keys())
+        if current_devices != set(self.device_list):
+            self.refresh_devices(system_state)
+
+        # Update information for the selected device
+        if self.selected_device and self.selected_device in system_state:
+            self.update_device_info(self.selected_device, system_state[self.selected_device])
+
+    def refresh_devices(self, system_state=None):
+        if system_state is None or not isinstance(system_state, dict):
+            system_state = {}
+            if hasattr(self.gui_manager, '_server_config') and self.gui_manager._server_config is not None:
+                if hasattr(self.gui_manager._server_config, 'trackers'):
+                    system_state.update(self.gui_manager._server_config.trackers)
+                if hasattr(self.gui_manager._server_config, 'tracking_references'):
+                    system_state.update(self.gui_manager._server_config.tracking_references)
             else:
-                dpg.set_value(f"{device}_velocity", "Velocity: N/A")
+                self.gui_manager.add_log("Server configuration not available yet", level=logging.WARNING)
+        
+        self.device_list = list(system_state.keys())
+        if dpg.does_item_exist("device_selector"):
+            dpg.configure_item("device_selector", items=self.device_list)
+        
+        if self.selected_device not in self.device_list:
+            if self.device_list:
+                self.selected_device = self.device_list[0]
+                if dpg.does_item_exist("device_selector"):
+                    dpg.set_value("device_selector", self.selected_device)
+            else:
+                self.selected_device = None
+                if dpg.does_item_exist("device_selector"):
+                    dpg.set_value("device_selector", "")
+
+    def on_device_selected(self, sender, app_data, user_data):
+        self.selected_device = app_data
+        dpg.delete_item("device_info_group", children_only=True)
+
+    def update_device_info(self, device, state):
+        dpg.delete_item("device_info_group", children_only=True)
+        with dpg.group(parent="device_info_group"):
+            dpg.add_text(f"{device}:")
+            dpg.add_text(f"Position: x: {state.x:.4f}, y: {state.y:.4f}, z: {state.z:.4f}")
+            dpg.add_text(f"Rotation: roll: {state.roll:.2f}, pitch: {state.pitch:.2f}, yaw: {state.yaw:.2f}")
+            if hasattr(state, 'vel_x'):
+                dpg.add_text(f"Velocity: x: {state.vel_x:.4f}, y: {state.vel_y:.4f}, z: {state.vel_z:.4f}")
+            else:
+                dpg.add_text("Velocity: N/A")
+
+    def toggle_recording(self, sender, app_data, user_data):
+        if self.selected_device:
+            self.is_recording = not self.is_recording
+            message = {"record": self.is_recording, "device": self.selected_device}
+            self.gui_manager._pipe.send(message)
+            
+            if self.is_recording:
+                dpg.configure_item("record_button", label="Stop Recording")
+                self.gui_manager.add_log(f"Started recording data for device: {self.selected_device}")
+            else:
+                dpg.configure_item("record_button", label="Start Recording")
+                self.gui_manager.add_log(f"Stopped recording data for device: {self.selected_device}")
 
     def clear(self):
         if dpg.does_item_exist(self.window_tag):
             dpg.delete_item(self.window_tag)
-        self.devices_shown.clear()
+        self.selected_device = None
+        self.device_list.clear()
 
     def hide(self):
         if dpg.does_item_exist(self.window_tag):
@@ -335,8 +384,6 @@ class VisualizationPage:
         with dpg.window(label="Main Window", tag="main_window", width=1000, height=1080, pos=[400, 0]):
             with dpg.group(horizontal=True):
                 dpg.add_button(label="Refresh", callback=self.refresh)
-                dpg.add_button(label="Test", callback=self.log_message)
-
             self.scene.add()
         
         self.devices_page.show()
@@ -348,11 +395,8 @@ class VisualizationPage:
     def refresh(self, sender, data):
         self.gui_manager.refresh_system()
 
-    def log_message(self, sender, data):
-        self.gui_manager.add_log("Test message")
-
     def show_logs(self):
-        with dpg.window(label="Logger", tag="logger_window", width=400, height=400, pos=[0, 400]):
+        with dpg.window(label="Logger", tag="logger_window", width=400, height=600, pos=[0, 200]):
             dpg.add_text("", tag="log_output")
 
     def update(self, system_state: dict):
@@ -460,5 +504,11 @@ class GuiManager:
 
     def refresh_system(self):
         self._pipe.send({"refresh": None})
+
+
+
+
+
+
 
 

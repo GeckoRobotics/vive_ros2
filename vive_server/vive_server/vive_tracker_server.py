@@ -154,6 +154,10 @@ class ViveTrackerServer(Server):
                 if "refresh" in data:
                     self.logger.info("Refreshing system")
                     self.reconnect_triad_vr()
+                if "record" in data:
+                    self.should_record = data["record"]
+                    self.device_to_record = data["device"]
+                    self.logger.info(f"Recording set to {self.should_record} for device {self.device_to_record}")
 
             # Update the GUI
             if self.use_gui:
