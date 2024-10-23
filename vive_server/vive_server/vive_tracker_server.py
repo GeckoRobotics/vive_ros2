@@ -292,8 +292,6 @@ class ViveTrackerServer(Server):
                     message: Optional[ViveDynamicObjectMessage] = self.create_dynamic_message(device=tracker,
                                                                                               device_key=tracker_key)
                     return message
-                else:
-                    self.logger.warning(f"Device {tracker_key} returned None pose")
             else:
                 self.logger.warning(f"Device {tracker_key} not found")
         except Exception as e:

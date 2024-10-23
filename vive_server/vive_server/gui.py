@@ -523,7 +523,7 @@ class VisualizationPage:
         # Implement save configuration logic here
 
     def refresh(self):
-        logger.info("Refresh button clicked")
+        self.gui_manager.refresh_system()
         # Implement refresh logic here
 
     def calibrate(self):
@@ -596,7 +596,8 @@ class GuiManager:
     def update_config(self, config):
         self._server_config = config
 
-
+    def refresh_system(self):
+        self._pipe.send({"refresh": None})
 
 
 
