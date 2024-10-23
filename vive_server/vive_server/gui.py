@@ -145,36 +145,6 @@ class Scene:
 
         dpg.draw_circle(parent=self.name, center=origin[:2], radius=4, color=(255, 255, 255, 255), fill=(255, 255, 255, 255), tag="axis_origin")
 
-    def draw_crown(self, center, size, color, rotation):
-        # Base of the crown (triangle)
-        points = []
-        num_points = 3
-        base_radius = size * 0.8  # Slightly smaller than the spike length
-        for i in range(num_points):
-            angle = 2 * math.pi * i / num_points + rotation + math.pi  # Start from the bottom
-            x = center[0] + base_radius * math.cos(angle)
-            y = center[1] + base_radius * math.sin(angle)
-            points.append([x, y])
-        
-        dpg.draw_polygon(parent=self.name, points=points, color=color, fill=color)
-
-        # Spikes of the crown
-        for i in range(num_points):
-            angle = 2 * math.pi * i / num_points + rotation + math.pi  # Start from the bottom
-            base_x = center[0] + base_radius * math.cos(angle)
-            base_y = center[1] + base_radius * math.sin(angle)
-            tip_x = center[0] + size * math.cos(angle)
-            tip_y = center[1] + size * math.sin(angle)
-            dpg.draw_triangle(parent=self.name, 
-                              p1=[base_x, base_y],
-                              p2=[tip_x, tip_y],
-                              p3=[center[0] + base_radius * math.cos(angle + 2*math.pi/num_points), 
-                                  center[1] + base_radius * math.sin(angle + 2*math.pi/num_points)],
-                              color=color, fill=color)
-
-        # Center jewel
-        dpg.draw_circle(parent=self.name, center=center, radius=size/4, color=(255,0,0,255), fill=(255,0,0,255))
-
     def draw_tracker_axes(self, center, size, rotation_matrix):
         # Colors for each axis
         colors = [(255, 0, 0, 255),  # X-axis: Red
@@ -397,7 +367,7 @@ class VisualizationPage:
 
     def show_logs(self):
         with dpg.window(label="Logger", tag="logger_window", width=400, height=600, pos=[0, 200]):
-            dpg.add_text("", tag="log_output")
+            dpg.add_text("", tag="log_output", multiline=True)
 
     def update(self, system_state: dict):
         self.scene.draw(system_state)
@@ -504,11 +474,3 @@ class GuiManager:
 
     def refresh_system(self):
         self._pipe.send({"refresh": None})
-
-
-
-
-
-
-
-
