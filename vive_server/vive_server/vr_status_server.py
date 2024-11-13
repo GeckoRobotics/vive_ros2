@@ -53,6 +53,10 @@ class DevicePose(BaseModel):
         default_factory=list,
         description="3x4 transformation matrix flattened to [m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23]"
     )
+    is_recording: bool = Field(
+        default=False,
+        description="Whether this device is currently being recorded"
+    )
 
 # Define response models
 class DeviceList(BaseModel):
@@ -217,7 +221,11 @@ async def get_status() -> StatusResponse:
                     pose_matrix[1][0], pose_matrix[1][1], pose_matrix[1][2], pose_matrix[1][3],
                     pose_matrix[2][0], pose_matrix[2][1], pose_matrix[2][2], pose_matrix[2][3]
                 ]
-                device_poses.append(DevicePose(name=device_name, pose_matrix=matrix_list))
+                device_poses.append(DevicePose(
+                    name=device_name, 
+                    pose_matrix=matrix_list,
+                    is_recording=device_name in recording_states
+                ))
 
         return StatusResponse(
             devices=DeviceList(
