@@ -76,10 +76,11 @@ class WebSocketPoseUpdate(BaseModel):
     poses: List[DevicePose]
 
 class RecordingRequest(BaseModel):
-    device_id: str = Field(..., description="The ID of the device to record")
+    device_ids: List[str] = Field(..., description="The IDs of the devices to record")
+    fixed_device_ids: List[str] = Field(..., description="The IDs of the devices that are fixed")
 
 class StopRecordingRequest(BaseModel):
-    device_id: str = Field(..., description="The ID of the device to stop recording")
+    device_ids: List[str] = Field(..., description="The IDs of the devices to stop recording")
     download: bool = Field(default=False, description="If true, returns the recorded data as JSON")
 
 # This union type represents all possible message types that can be sent over the websocket
@@ -93,12 +94,15 @@ async def start_recording(request: RecordingRequest):
     if not vr:
         raise HTTPException(status_code=503, detail="OpenVR not initialized")
     
-    if request.device_id in recording_states:
-        raise HTTPException(status_code=400, detail=f"Already recording device {request.device_id}")
+    # Check if any of the requested devices are already recording
+    already_recording = [device_id for device_id in request.device_ids if device_id in recording_states]
+    if already_recording:
+        raise HTTPException(status_code=400, detail=f"Already recording devices: {', '.join(already_recording)}")
     
-    # Verify device exists
-    if request.device_id not in vr.devices:
-        raise HTTPException(status_code=404, detail=f"Device {request.device_id} not found")
+    # Verify all devices exist
+    missing_devices = [device_id for device_id in request.device_ids if device_id not in vr.devices]
+    if missing_devices:
+        raise HTTPException(status_code=404, detail=f"Devices not found: {', '.join(missing_devices)}")
     
     try:
         # Create output directory if it doesn't exist
@@ -107,37 +111,56 @@ async def start_recording(request: RecordingRequest):
         
         # Create output file
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        filename = f"{request.device_id}_{timestamp}.txt"
+        filename = f"multi_device_recording_{timestamp}.txt"
         output_path = output_dir / filename
+
+        shared_file = output_path.open('w')
         
-        recording_states[request.device_id] = {
-            "output_file": output_path.open('w'),
-            "output_path": output_path
-        }
+        # Store the same file handle for each device
+        for device_id in request.device_ids:
+            recording_states[device_id] = {
+                "output_file": shared_file,
+                "output_path": output_path,
+                "is_fixed": device_id in request.fixed_device_ids
+            }
         
-        return {"message": f"Started recording device {request.device_id} to {filename}"}
+        return {"message": f"Started recording devices: {', '.join(request.device_ids)} to {filename}"}
     
     except Exception as e:
+        # Clean up if error occurs
+        for device_id in request.device_ids:
+            if device_id in recording_states:
+                try:
+                    recording_states[device_id]["output_file"].close()
+                    del recording_states[device_id]
+                except:
+                    pass
         raise HTTPException(status_code=500, detail=f"Failed to start recording: {str(e)}")
 
 @app.post("/stop-recording")
 async def stop_recording(request: StopRecordingRequest):
-    if request.device_id not in recording_states:
-        raise HTTPException(status_code=400, detail=f"Device {request.device_id} is not being recorded")
+    not_recording = [device_id for device_id in request.device_ids if device_id not in recording_states]
+    if not_recording:
+        raise HTTPException(status_code=400, detail=f"Devices not being recorded: {', '.join(not_recording)}")
     
     try:
-        # Close the file
-        recording_states[request.device_id]["output_file"].close()
+        # Get the first device's file info (they all share the same file)
+        first_device = request.device_ids[0]
+        shared_file = recording_states[first_device]["output_file"]
+        filepath = recording_states[first_device]["output_path"]
+        
+        # Close the shared file
+        shared_file.close()
         
         # Read the file contents
-        with open(recording_states[request.device_id]["output_path"], 'r') as f:
+        with open(filepath, 'r') as f:
             content = f.read()
             # Remove trailing comma and newline, then wrap in brackets
             content = '[' + content.rstrip(',\n') + ']'
             
-        # Clean up recording state
-        filepath = recording_states[request.device_id]["output_path"]
-        del recording_states[request.device_id]
+        # Clean up recording states for all devices
+        for device_id in request.device_ids:
+            del recording_states[device_id]
         
         # Return either the JSON data or a success message
         if request.download:
@@ -185,7 +208,12 @@ async def websocket_endpoint(websocket: WebSocket):
                             if device_name in recording_states:
                                 current_timestamp = str(datetime.now())
                                 message = json.dumps(
-                                    {"ts": current_timestamp, "pose": matrix_list},
+                                    {
+                                        "device_id": device_name,
+                                        "is_fixed": recording_states[device_name]["is_fixed"],
+                                        "ts": current_timestamp, 
+                                        "pose": matrix_list
+                                    },
                                     separators=(',', ':')
                                 )
                                 recording_states[device_name]["output_file"].write(message + ",\n")
