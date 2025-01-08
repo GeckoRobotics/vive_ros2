@@ -77,7 +77,7 @@ class WebSocketPoseUpdate(BaseModel):
 
 class RecordingRequest(BaseModel):
     device_ids: List[str] = Field(..., description="The IDs of the devices to record")
-    fixed_device_ids: List[str] = Field(..., description="The IDs of the devices that are fixed")
+    mobile_device_ids: List[str] = Field(..., description="The IDs of the devices that are mobile")
 
 class StopRecordingRequest(BaseModel):
     device_ids: List[str] = Field(..., description="The IDs of the devices to stop recording")
@@ -88,6 +88,12 @@ WebSocketMessage = Union[WebSocketError, WebSocketPoseUpdate]
 
 # Replace the single recording state with a dictionary of recording states per device
 recording_states = {}  # device_id -> recording state dictionary
+
+class RecordingData(BaseModel):
+    path: str
+    timestamp: str
+    mobile_device_ids: List[str]
+    localization_data: List[Dict] = Field(default_factory=list)
 
 @app.post("/start-recording")
 async def start_recording(request: RecordingRequest):
@@ -111,17 +117,17 @@ async def start_recording(request: RecordingRequest):
         
         # Create output file
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        filename = f"multi_device_recording_{timestamp}.txt"
+        filename = f"multi_device_recording_{timestamp}.json"
         output_path = output_dir / filename
 
-        shared_file = output_path.open('w')
+        # Initialize recording data structure
+        recording_data = RecordingData(path=filename, timestamp=str(datetime.now()), mobile_device_ids=request.mobile_device_ids)
         
-        # Store the same file handle for each device
+        # Store the recording data and file info for each device
         for device_id in request.device_ids:
             recording_states[device_id] = {
-                "output_file": shared_file,
                 "output_path": output_path,
-                "is_fixed": device_id in request.fixed_device_ids
+                "recording_data": recording_data
             }
         
         return {"message": f"Started recording devices: {', '.join(request.device_ids)} to {filename}"}
@@ -130,11 +136,7 @@ async def start_recording(request: RecordingRequest):
         # Clean up if error occurs
         for device_id in request.device_ids:
             if device_id in recording_states:
-                try:
-                    recording_states[device_id]["output_file"].close()
-                    del recording_states[device_id]
-                except:
-                    pass
+                del recording_states[device_id]
         raise HTTPException(status_code=500, detail=f"Failed to start recording: {str(e)}")
 
 @app.post("/stop-recording")
@@ -144,19 +146,14 @@ async def stop_recording(request: StopRecordingRequest):
         raise HTTPException(status_code=400, detail=f"Devices not being recorded: {', '.join(not_recording)}")
     
     try:
-        # Get the first device's file info (they all share the same file)
+        # Get the first device's recording data (they all share the same data)
         first_device = request.device_ids[0]
-        shared_file = recording_states[first_device]["output_file"]
+        recording_data = recording_states[first_device]["recording_data"]
         filepath = recording_states[first_device]["output_path"]
         
-        # Close the shared file
-        shared_file.close()
-        
-        # Read the file contents
-        with open(filepath, 'r') as f:
-            content = f.read()
-            # Remove trailing comma and newline, then wrap in brackets
-            content = '[' + content.rstrip(',\n') + ']'
+        # Write the complete recording data to file
+        with open(filepath, 'w') as f:
+            json.dump(recording_data.dict(), f, indent=2)
             
         # Clean up recording states for all devices
         for device_id in request.device_ids:
@@ -164,7 +161,7 @@ async def stop_recording(request: StopRecordingRequest):
         
         # Return either the JSON data or a success message
         if request.download:
-            return json.loads(content)  # Returns the parsed JSON array
+            return recording_data.dict()
         else:
             return {"message": f"Recording stopped and saved to {filepath}"}
             
@@ -204,20 +201,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             last_poses[device_name] = matrix_list
                             changed_poses.append(DevicePose(name=device_name, pose_matrix=matrix_list))
                             
-                            # If we're recording this device, write to file
+                            # If we're recording this device, append to recording data
                             if device_name in recording_states:
-                                current_timestamp = str(datetime.now())
-                                message = json.dumps(
-                                    {
-                                        "device_id": device_name,
-                                        "is_fixed": recording_states[device_name]["is_fixed"],
-                                        "ts": current_timestamp, 
-                                        "pose": matrix_list
-                                    },
-                                    separators=(',', ':')
-                                )
-                                recording_states[device_name]["output_file"].write(message + ",\n")
-                                recording_states[device_name]["output_file"].flush()  # Ensure data is written immediately
+                                recording_data = recording_states[device_name]["recording_data"]
+                                recording_data.localization_data.append({
+                                    "device_id": device_name,
+                                    "ts": str(datetime.now()),
+                                    "pose": matrix_list
+                                })
                 
                 if changed_poses:
                     update = WebSocketPoseUpdate(poses=changed_poses)
