@@ -16,7 +16,6 @@ from typing import Tuple
 import argparse
 from pathlib import Path
 
-
 class ViveTrackerClient:
     """
     Defines a vive tracker client that constantly polls message from (HOST, PORT)
@@ -31,7 +30,7 @@ class ViveTrackerClient:
     def __init__(self, host: str, port: int, tracker_name: str,
                  time_out: float = 1, buffer_length: int = 1024,
                  should_record: bool = False,
-                 output_file_path: Path = Path(expanduser("~") + "/vive_ros2/data/RFS_Track.txt")):
+                 output_file_path: Path = Path("./data.txt")):
         """
 
         Args:
@@ -58,7 +57,7 @@ class ViveTrackerClient:
         if self.should_record:
             if self.output_file_path.parent.exists():
                 self.output_file_path.parent.mkdir(exist_ok=True, parents=True)
-            self.output_file = self.output_file_path.open('w')
+            self.output_file = self.output_file_path.open('a')
         self.count = 0
         self.logger = logging.getLogger(f"Vive Tracker Client [{self.tracker_name}]")
         self.logger.info("Tracker Initialized")
@@ -85,14 +84,8 @@ class ViveTrackerClient:
                 parsed_message, status = self.parse_message(data.decode())
                 if status:
                     self.update_latest_tracker_message(parsed_message=parsed_message)
-                    if self.should_record:
-                        if self.count % 10 == 0:
-                            self.output_file.write(f'{self.latest_tracker_message.x},'
-                                                   f'{self.latest_tracker_message.y},'
-                                                   f'{self.latest_tracker_message.z},'
-                                                   f'{self.latest_tracker_message.roll},'
-                                                   f'{self.latest_tracker_message.pitch},'
-                                                   f'{self.latest_tracker_message.yaw}\n')
+                    self.output_file.write(f'{self.latest_tracker_message.x},{self.latest_tracker_message.y},{self.latest_tracker_message.z},{self.latest_tracker_message.roll},\n')
+                    self.output_file.flush()
                     self.count += 1
                 else:
                     self.logger.error(f"Failed to parse incoming message [{data.decode()}]")
@@ -237,5 +230,5 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
                         datefmt="%H:%M:%S", level=logging.DEBUG if args.debug is True else logging.INFO)
     HOST, PORT = "127.0.0.1", 8000
-    client = ViveTrackerClient(host=HOST, port=PORT, tracker_name="tracker_1", should_record=args.collect)
+    client = ViveTrackerClient(host=HOST, port=PORT, tracker_name="tracker_1", should_record=False)
     client.update()

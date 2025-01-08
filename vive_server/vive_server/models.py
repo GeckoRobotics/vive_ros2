@@ -1,3 +1,4 @@
+from typing import List
 from pydantic import BaseModel, Field
 import scipy.spatial.transform as transform
 
@@ -18,6 +19,7 @@ class Configuration(BaseModel):
 
 class ViveDynamicObjectMessage(BaseModel):
     valid: int = Field(default=0)
+    matrix: List = Field(default_factory=list)
     x: float = Field(default=0)
     y: float = Field(default=0)
     z: float = Field(default=0)
@@ -25,6 +27,9 @@ class ViveDynamicObjectMessage(BaseModel):
     qy: float = Field(default=0)
     qz: float = Field(default=0)
     qw: float = Field(default=1)
+    roll: float = Field(default=0)
+    pitch: float = Field(default=0)
+    yaw: float = Field(default=0)
     vel_x: float = Field(default=0)
     vel_y: float = Field(default=0)
     vel_z: float = Field(default=0)
@@ -57,6 +62,9 @@ class ViveStaticObjectMessage(BaseModel):
     qy: float = Field(default=0)
     qz: float = Field(default=0)
     qw: float = Field(default=1)
+    roll: float = Field(default=0)
+    pitch: float = Field(default=0)
+    yaw: float = Field(default=0)
     device_name: str = Field(default="None")
     serial_num: str = Field(default="None")
 
